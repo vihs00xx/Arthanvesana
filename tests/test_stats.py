@@ -37,13 +37,27 @@ def test_bigram_start_and_oov_handling():
     model = NGramModel(TRAIN, 2, k=1.0)
     assert model.logprob([]) == 0.0
     lp = model.logprob(["a", "b"])
-    expect = math.log2(3 / 7) + math.log2(2 / 7)
+    expect = math.log2(3 / 7) + math.log2(2 / 6)
     assert lp == expect
     assert math.isnan(model.perplexity([]))
 
 
 def test_top_ngrams_order():
     assert top_ngrams(TRAIN, 1, 1) == [(("a",), 3)]
+
+
+def test_distributions_sum_to_one():
+    cases = [
+        (1, [()]),
+        (2, [("a",), ("b",), ("c",), ("<S>",), ("<UNK>",), ("q",)]),
+        (3, [("<S>", "<S>"), ("<S>", "a"), ("a", "b"), ("q", "z")]),
+    ]
+    for n, ctxs in cases:
+        for method in ("laplace", "wittenbell", "interp"):
+            model = NGramModel(TRAIN, n, method=method)
+            for ctx in ctxs:
+                total = sum(model.dist(ctx).values())
+                assert abs(total - 1.0) < 1e-9, (n, method, ctx, total)
 
 
 def test_unigram_entropy():
