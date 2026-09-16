@@ -1,6 +1,6 @@
 # Arthanvesana
 
-**AI-assisted structural analysis of the Indus script using statistical baselines, sign embeddings, and self-supervised learning.**
+**AI-assisted structural analysis of the Sindhu-Sarasvatī script using statistical baselines, sign embeddings, and self-supervised learning.**
 
 Exploring patterns in an undeciphered writing system without assuming its language or meaning.
 
