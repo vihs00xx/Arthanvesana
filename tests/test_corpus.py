@@ -1,5 +1,3 @@
-"""Tests for corpus parsing and validation (Phase 1)."""
-
 from pathlib import Path
 
 import pandas as pd
@@ -50,7 +48,7 @@ def test_tidy_matches_published_counts():
 def test_normalize_direction():
     assert normalize_direction("L/R") == "L/R"
     assert normalize_direction("R/L") == "R/L"
-    assert normalize_direction("R/L ") == "R/L"  # trailing space in source
+    assert normalize_direction("R/L ") == "R/L"
     assert normalize_direction("R/l") == "R/L"
     for other in ("-", "NR", "BUS", "SYM", "T/B", None, ""):
         assert normalize_direction(other) == "OTHER"
@@ -66,12 +64,11 @@ def test_reading_order_reversal():
 def test_sequences_reconstruction():
     df = to_tidy(load_raw(RAW, verify=False))
     seqs = inscription_sequences(df)
-    assert len(seqs) == 5536  # all-000 rows excluded
+    assert len(seqs) == 5536
     assert all(len(s) > 0 for s in seqs)
     assert sum(len(s) for s in seqs) == 18065
     first = df[df["inscription_id"] == "INDUS-0001"].sort_values("position")
     assert first["sign_code"].tolist() == ["410", "017"]
-    # INDUS-0001 direction is L/R, so reading order == stored order
     assert seqs[0] == ["410", "017"] or isinstance(seqs[0], list)
 
 

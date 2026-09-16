@@ -1,9 +1,3 @@
-"""Build the tidy corpus: raw JSON -> data/processed/corpus.csv + summary.
-
-Usage (from repo root):
-    .venv\\Scripts\\python scripts\\build_corpus.py
-"""
-
 from __future__ import annotations
 
 import json
@@ -13,13 +7,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from arthanvesana.data.parse import (  # noqa: E402
+from arthanvesana.data.parse import (
     inscription_sequences,
     load_raw,
     sha256_file,
     to_tidy,
 )
-from arthanvesana.data.validate import validate_raw, validate_tidy  # noqa: E402
+from arthanvesana.data.validate import validate_raw, validate_tidy
 
 RAW = ROOT / "data" / "raw" / "sanitized_corpus.json"
 PROCESSED = ROOT / "data" / "processed"
@@ -36,7 +30,7 @@ def main() -> None:
     PROCESSED.mkdir(parents=True, exist_ok=True)
     df.to_csv(CSV, index=False, encoding="utf-8")
 
-    seqs = inscription_sequences(df)  # reading order, gated, non-empty
+    seqs = inscription_sequences(df)
     gated_lengths = [len(s) for s in seqs]
     summary = {
         "sha256": sha256_file(RAW),

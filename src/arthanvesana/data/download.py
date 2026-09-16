@@ -1,12 +1,3 @@
-"""Download the upstream Indus corpus file with SHA-256 verification.
-
-Upstream: https://github.com/ShaktiOSindia/indus-sign-regimes-deposit
-File: sanitized_corpus.json at the pinned commit recorded in data/PROVENANCE.md.
-
-The download is refused (existing file removed) unless the SHA-256 matches,
-so a silent upstream change can never contaminate the analysis.
-"""
-
 from __future__ import annotations
 
 import hashlib

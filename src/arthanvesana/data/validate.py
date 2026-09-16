@@ -1,18 +1,9 @@
-"""Validation checks for the raw corpus and the tidy token table.
-
-Every check encodes either a structural invariant (unique ids, well-formed
-codes) or a published property of the upstream deposit (counts). A failure
-means the input changed upstream or the parser is wrong -- never something
-to silence.
-"""
-
 from __future__ import annotations
 
 import pandas as pd
 
 from .parse import MISSING, REQUIRED_KEYS, _CODE_RE
 
-# Published properties of sanitized_corpus.json (deposit README, v4+).
 EXPECTED = {
     "inscriptions": 5704,
     "tokens": 19976,
@@ -30,7 +21,6 @@ def _fail(check: str, detail: str) -> ValueError:
 
 
 def validate_raw(records: list[dict]) -> dict:
-    """Check structural invariants of the raw JSON records."""
     if len(records) != EXPECTED["inscriptions"]:
         raise _fail(
             "row-count",
@@ -55,7 +45,6 @@ def validate_raw(records: list[dict]) -> dict:
 
 
 def validate_tidy(df: pd.DataFrame) -> dict:
-    """Check the tidy table against the deposit's published counts."""
     report: dict = {}
     report["token_rows"] = len(df)
     if len(df) != EXPECTED["tokens"]:

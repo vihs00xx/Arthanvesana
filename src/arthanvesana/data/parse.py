@@ -1,17 +1,3 @@
-"""Parse the raw Indus corpus JSON into a tidy token table.
-
-Conventions (adopted from the upstream deposit's chr_lib, see data/PROVENANCE.md):
-  - Symbols are stored physical left-to-right in the JSON.
-  - Reading order is as-stored for direction 'L/R', reversed for 'R/L'.
-  - ICIT '000' is a missing-data placeholder for an illegible sign, not a sign.
-
-One deliberate deviation from upstream: upstream reverses the stored order for
-*every* direction value other than 'L/R' (including '-', 'NR', 'BUS', 'SYM',
-'T/B'). We only reverse for unambiguous 'R/L' and keep stored order otherwise,
-flagging those rows with reading_order_known=False so direction-uncertain
-material can be excluded from positional analyses.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -46,7 +32,6 @@ def sha256_file(path: str | Path) -> str:
 
 
 def load_raw(path: str | Path, verify: bool = True) -> list[dict]:
-    """Load raw inscription records, optionally verifying the file SHA-256."""
     path = Path(path)
     if verify:
         got = sha256_file(path)
@@ -63,7 +48,6 @@ def load_raw(path: str | Path, verify: bool = True) -> list[dict]:
 
 
 def normalize_direction(raw: str | None) -> str:
-    """Canonical direction class: 'L/R', 'R/L', or 'OTHER' (uncertain)."""
     s = (raw or "").strip()
     if s == "L/R":
         return "L/R"
@@ -77,19 +61,16 @@ def reading_order_known(direction: str) -> bool:
 
 
 def sequence_in_reading_order(symbols: list[str], direction: str) -> list[str]:
-    """Return symbols in assumed reading order (reversed iff direction is R/L)."""
     if direction == "R/L":
         return list(reversed(symbols))
     return list(symbols)
 
 
 def gate(sequence: list[str]) -> list[str]:
-    """Remove missing-data placeholders ('000'); never join across gaps."""
     return [s for s in sequence if s != MISSING]
 
 
 def to_tidy(records: list[dict]) -> pd.DataFrame:
-    """Flatten inscription records to one row per sign token (stored order)."""
     rows = []
     for rec in records:
         direction = normalize_direction(rec.get("direction"))
@@ -139,11 +120,6 @@ def inscription_sequences(
     drop_empty: bool = True,
     known_direction_only: bool = False,
 ) -> list[list[str]]:
-    """Reconstruct per-inscription sign sequences from the tidy table.
-
-    Set known_direction_only=True to restrict to inscriptions whose reading
-    direction is unambiguous (L/R or R/L).
-    """
     frame = df
     if known_direction_only:
         frame = frame[frame["reading_order_known"]]
