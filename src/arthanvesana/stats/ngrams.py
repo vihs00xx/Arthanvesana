@@ -3,9 +3,10 @@
 method='laplace' adds pseudocount k to every outcome; 'wittenbell' reserves
 mass proportional to the number of distinct observed followers, backing off
 to lower orders for unseen contexts; 'interp' linearly interpolates each
-order with the one below (lambda=lam), down to uniform. Vocabulary always
-includes <UNK> for unseen signs; <S> pads sequence starts and is a valid
-context but never a predicted outcome.
+order with the one below (lambda=lam), down to uniform; 'mkn' is interpolated
+modified Kneser-Ney with estimated discounts and continuation counts.
+Vocabulary always includes <UNK> for unseen signs; <S> pads sequence starts
+and is a valid context but never a predicted outcome.
 """
 
 from __future__ import annotations
@@ -20,6 +21,19 @@ def count_ngrams(seqs: list[list[str]], n: int) -> Counter:
         for i in range(len(seq) - n + 1):
             counts[tuple(seq[i : i + n])] += 1
     return counts
+
+
+def _mkn_discounts(counts: Counter) -> tuple:
+    coc = Counter(counts.values())
+    n1, n2, n3, n4 = (coc.get(i, 0) for i in (1, 2, 3, 4))
+    if 0 in (n1, n2, n3, n4):
+        d = n1 / (n1 + 2 * n2) if (n1 + 2 * n2) else 0.75
+        return (d, d, d)
+    y = n1 / (n1 + 2 * n2)
+    d1 = max(1 - 2 * y * n2 / n1, 0.0)
+    d2 = max(2 - 3 * y * n3 / n2, 0.0)
+    d3 = max(3 - 4 * y * n4 / n3, 0.0)
+    return (d1, d2, d3)
 
 
 class NGramModel:
@@ -57,7 +71,73 @@ class NGramModel:
             return self._dist_interp(self.n, context)
         if self.method == "wittenbell":
             return self._dist_wb(self.n, context)
+        if self.method == "mkn":
+            self._ensure_mkn()
+            return self._dist_mkn(self.n, context)
         return self._dist_laplace(self.n, context)
+
+    def _ensure_mkn(self) -> None:
+        if hasattr(self, "mkn_levels"):
+            return
+        levels: dict[int, Counter] = {self.n: self.orders[self.n]}
+        for order in range(self.n - 1, 0, -1):
+            cont: Counter = Counter()
+            for key in self.orders[order + 1]:
+                gram = key[1:]
+                if gram[-1] in self.vocab:
+                    cont[gram] += 1
+            levels[order] = cont
+        self.mkn_levels = levels
+        self.mkn_followers: dict[int, dict[tuple, Counter]] = {}
+        for order in range(1, self.n):
+            fmap: dict[tuple, Counter] = {}
+            for key, v in levels[order + 1].items():
+                fmap.setdefault(key[:-1], Counter())[key[-1]] += v
+            self.mkn_followers[order] = fmap
+        self.mkn_discounts: dict[int, tuple] = {}
+        for order in range(1, self.n + 1):
+            self.mkn_discounts[order] = _mkn_discounts(levels[order])
+
+    def _dist_mkn(self, order: int, context: tuple) -> dict:
+        if order == 0:
+            return {w: 1.0 / self.vsize for w in self.vocab}
+        fc = self.mkn_followers[order - 1].get(context, Counter()) if order > 1 else None
+        if order == 1:
+            counts = {
+                w: self.mkn_levels[1].get((w,), 0) for w in self.vocab
+            }
+            total = sum(counts.values())
+            if total == 0:
+                return self._dist_mkn(0, ())
+            d1, d2, d3 = self.mkn_discounts[1]
+            lower = self._dist_mkn(0, ())
+        else:
+            counts = dict(fc)
+            total = sum(counts.values())
+            if total == 0:
+                return self._dist_mkn(order - 1, context[1:])
+            d1, d2, d3 = self.mkn_discounts[order]
+            lower = self._dist_mkn(order - 1, context[1:])
+        out = {}
+        gamma_num = 0.0
+        for w in self.vocab:
+            c = counts.get(w, 0)
+            if c == 0:
+                out[w] = 0.0
+            elif c == 1:
+                out[w] = max(c - d1, 0.0)
+                gamma_num += d1
+            elif c == 2:
+                out[w] = max(c - d2, 0.0)
+                gamma_num += d2
+            else:
+                out[w] = max(c - d3, 0.0)
+                gamma_num += d3
+        gamma = gamma_num / total if total else 0.0
+        for w in self.vocab:
+            out[w] = out[w] / total if total else 0.0
+            out[w] += gamma * lower[w]
+        return out
 
     def _dist_laplace(self, order: int, context: tuple) -> dict:
         if order == 1:

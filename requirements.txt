@@ -5,6 +5,7 @@ scikit-learn
 matplotlib
 seaborn
 gensim
+morfessor
 umap-learn
 networkx
 jupyter

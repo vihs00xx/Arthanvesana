@@ -39,3 +39,25 @@ def deduplicated(seqs: list[list[str]]) -> list[list[str]]:
             seen.add(key)
             unique.append(seq)
     return unique
+
+
+def sample_sequence(model, max_len: int = 20, seed: int = 0) -> list[str]:
+    rng = random.Random(seed)
+    seq: list[str] = []
+    context = ("<S>",) * (model.n - 1) if model.n > 1 else ()
+    while len(seq) < max_len:
+        dist = model.dist(context)
+        r = rng.random()
+        acc = 0.0
+        pick = None
+        for w, p in dist.items():
+            acc += p
+            if r <= acc:
+                pick = w
+                break
+        if pick is None or pick == "<UNK>":
+            break
+        seq.append(pick)
+        if model.n > 1:
+            context = tuple((list(context) + [pick])[1:])
+    return seq

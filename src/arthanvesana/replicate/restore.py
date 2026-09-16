@@ -44,32 +44,65 @@ def restore_rank(
     return None
 
 
-def restoration_accuracy(
-    train: list[list[str]], test: list[list[str]], top_k: tuple = (1, 5, 10)
-) -> dict:
+def restoration_records(
+    train: list[list[str]], test: list[list[str]]
+) -> tuple[list[dict], int]:
     model = NGramModel(train, 2, method="wittenbell")
     mats = _matrix(model)
-    hits = {k: 0 for k in top_k}
-    total = 0
+    records = []
     skipped = 0
-    by_length: dict[int, list[int]] = {}
     for seq in test:
         if len(seq) < 2:
             continue
-        ranks = []
         for pos in range(len(seq)):
             if seq[pos] not in model.vocab:
                 skipped += 1
                 continue
-            r = restore_rank(mats, model.vocab, seq, pos)
-            if r is not None:
-                ranks.append(r)
-        total += len(ranks)
-        by_length.setdefault(len(seq), []).extend(ranks)
-        for r in ranks:
-            for k in top_k:
-                if r <= k:
-                    hits[k] += 1
+            prev = seq[pos - 1] if pos > 0 else "<S>"
+            prev = prev if prev in mats else "<UNK>"
+            nxt = seq[pos + 1] if pos < len(seq) - 1 else None
+            nxt = nxt if nxt is None or nxt in model.vocab else "<UNK>"
+            d_prev = mats[prev]
+            scored = []
+            for cand in model.vocab:
+                if cand == "<UNK>":
+                    continue
+                s = d_prev.get(cand, 0.0)
+                if nxt is not None:
+                    s *= mats[cand].get(nxt, 0.0)
+                scored.append((s, cand))
+            scored.sort(key=lambda t: -t[0])
+            total = sum(s for s, _ in scored) or 1.0
+            rank = None
+            p_true = 0.0
+            for r, (s, cand) in enumerate(scored, start=1):
+                if cand == seq[pos]:
+                    rank = r
+                    p_true = s / total
+            records.append(
+                {
+                    "length": len(seq),
+                    "rank": rank,
+                    "p_true": p_true,
+                    "top_p": scored[0][0] / total if scored else 0.0,
+                    "hit": rank == 1,
+                }
+            )
+    return records, skipped
+
+
+def restoration_accuracy(
+    train: list[list[str]], test: list[list[str]], top_k: tuple = (1, 5, 10)
+) -> dict:
+    records, skipped = restoration_records(train, test)
+    hits = {k: 0 for k in top_k}
+    by_length: dict[int, list[int]] = {}
+    for rec in records:
+        by_length.setdefault(rec["length"], []).append(rec["rank"])
+        for k in top_k:
+            if rec["rank"] is not None and rec["rank"] <= k:
+                hits[k] += 1
+    total = len(records)
     out = {f"top_{k}": hits[k] / total if total else 0.0 for k in top_k}
     out["n_masked"] = total
     out["n_skipped_oov"] = skipped

@@ -46,6 +46,14 @@ def test_top_ngrams_order():
     assert top_ngrams(TRAIN, 1, 1) == [(("a",), 3)]
 
 
+def test_mkn_matches_hand_computation():
+    train = [["a", "b"], ["a", "b"], ["a", "c"]]
+    model = NGramModel(train, 2, method="mkn")
+    d = model.dist(("a",))
+    assert abs(d["b"] - 11 / 18) < 1e-9
+    assert abs(d["c"] - 5 / 18) < 1e-9
+
+
 def test_distributions_sum_to_one():
     cases = [
         (1, [()]),
@@ -53,7 +61,7 @@ def test_distributions_sum_to_one():
         (3, [("<S>", "<S>"), ("<S>", "a"), ("a", "b"), ("q", "z")]),
     ]
     for n, ctxs in cases:
-        for method in ("laplace", "wittenbell", "interp"):
+        for method in ("laplace", "wittenbell", "interp", "mkn"):
             model = NGramModel(TRAIN, n, method=method)
             for ctx in ctxs:
                 total = sum(model.dist(ctx).values())
