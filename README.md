@@ -18,7 +18,7 @@ Early scaffold. Planned phases:
 
 - Upstream: [ShaktiOSindia/indus-sign-regimes-deposit](https://github.com/ShaktiOSindia/indus-sign-regimes-deposit)
 - File: `sanitized_corpus.json` (5,704 catalogued inscriptions; ~18k sign tokens; 713 distinct signs; `000` marks an illegible sign, not a sign)
-- Upstream commit: `306a6df1e5c9dc1f227b17410f133f14df1bb470`
+- Upstream commit: `e48b3ec1e90f368079f5126790613cded6f6f56c` (2026-08-12)
 - SHA-256: `345241b13fedada87b4783c24cd241123491bbd7edaf5bf636f9cdb36c01da68`
 
 ## Setup

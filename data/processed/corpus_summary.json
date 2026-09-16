@@ -1,0 +1,21 @@
+{
+  "sha256": "345241b13fedada87b4783c24cd241123491bbd7edaf5bf636f9cdb36c01da68",
+  "raw": {
+    "records": 5704,
+    "unique_ids": 5704
+  },
+  "tidy": {
+    "token_rows": 19976,
+    "distinct_codes": 714,
+    "missing_tokens": 1911,
+    "all_missing_inscriptions": 168,
+    "analyzable_inscriptions": 5536,
+    "gated_sign_tokens": 18065,
+    "distinct_signs_gated": 713
+  },
+  "analyzable_sequences": 5536,
+  "gated_length_mean": 3.263186416184971,
+  "gated_length_max": 17,
+  "sites": 77,
+  "artefact_types": 32
+}
