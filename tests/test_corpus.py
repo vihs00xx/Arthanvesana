@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from anvesa.data.parse import (
+from arthanvesana.data.parse import (
     EXPECTED_SHA256,
     gate,
     inscription_sequences,
@@ -15,7 +15,7 @@ from anvesa.data.parse import (
     sha256_file,
     to_tidy,
 )
-from anvesa.data.validate import validate_raw, validate_tidy
+from arthanvesana.data.validate import validate_raw, validate_tidy
 
 ROOT = Path(__file__).resolve().parents[1]
 RAW = ROOT / "data" / "raw" / "sanitized_corpus.json"

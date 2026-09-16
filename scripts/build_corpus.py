@@ -13,13 +13,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from anvesa.data.parse import (  # noqa: E402
+from arthanvesana.data.parse import (  # noqa: E402
     inscription_sequences,
     load_raw,
     sha256_file,
     to_tidy,
 )
-from anvesa.data.validate import validate_raw, validate_tidy  # noqa: E402
+from arthanvesana.data.validate import validate_raw, validate_tidy  # noqa: E402
 
 RAW = ROOT / "data" / "raw" / "sanitized_corpus.json"
 PROCESSED = ROOT / "data" / "processed"

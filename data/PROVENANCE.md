@@ -11,7 +11,7 @@
   file was copied from the clone and verified byte-for-byte against the SHA-256
   published in the deposit README).
 
-Reproduce with: `.venv\Scripts\python src\anvesa\data\download.py`
+Reproduce with: `.venv\Scripts\python src\arthanvesana\data\download.py`
 
 ## Licensing / redistribution
 
