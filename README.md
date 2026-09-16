@@ -1,4 +1,4 @@
-# Arthanvesana
+# Arthānveṣaṇa
 
 **AI-assisted structural analysis of the Sindhu-Sarasvatī script using statistical baselines, sign embeddings, and self-supervised learning.**
 
