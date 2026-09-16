@@ -1,3 +1,7 @@
+"""Corpus validation. EXPECTED encodes the deposit's published counts; any
+failure means the upstream input changed or the parser is wrong.
+"""
+
 from __future__ import annotations
 
 import pandas as pd

@@ -1,3 +1,8 @@
+"""Per-sign positional profiles. Counting is slot-based: a length-1
+inscription contributes its sign to both 'begin' and 'end', so fractions
+always sum to 1.
+"""
+
 from __future__ import annotations
 
 from collections import Counter, defaultdict

@@ -1,3 +1,8 @@
+"""Regional usage test. One bigram model per site (100+ inscriptions), each
+evaluated on held-out portions of every site. Self perplexity below cross
+perplexity indicates site-distinctive sign usage.
+"""
+
 from __future__ import annotations
 
 import pandas as pd

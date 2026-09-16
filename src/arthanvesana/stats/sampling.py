@@ -1,3 +1,7 @@
+"""Seeded corpus sampling: within-inscription shuffles (null model preserving
+lengths and unigram counts), train/test splits, and exact deduplication.
+"""
+
 from __future__ import annotations
 
 import random

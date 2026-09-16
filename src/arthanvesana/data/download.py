@@ -1,3 +1,7 @@
+"""Fetch sanitized_corpus.json from the pinned upstream commit. The file is
+discarded unless its SHA-256 matches the published value.
+"""
+
 from __future__ import annotations
 
 import hashlib

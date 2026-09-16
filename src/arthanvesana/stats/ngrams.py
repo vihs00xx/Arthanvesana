@@ -1,3 +1,13 @@
+"""N-gram sequence models with selectable smoothing.
+
+method='laplace' adds pseudocount k to every outcome; 'wittenbell' reserves
+mass proportional to the number of distinct observed followers, backing off
+to lower orders for unseen contexts; 'interp' linearly interpolates each
+order with the one below (lambda=lam), down to uniform. Vocabulary always
+includes <UNK> for unseen signs; <S> pads sequence starts and is a valid
+context but never a predicted outcome.
+"""
+
 from __future__ import annotations
 
 import math

@@ -1,3 +1,8 @@
+"""Greedy segmentation after Sinha et al.: repeatedly merge the adjacent pair
+with the highest association score. Fast-collapsing trees indicate reusable
+sub-units combining into longer texts.
+"""
+
 from __future__ import annotations
 
 

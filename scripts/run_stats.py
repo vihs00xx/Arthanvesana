@@ -1,3 +1,8 @@
+"""Phase-2 statistical baselines. Usage from repo root: .venv\\Scripts\\python scripts\\run_stats.py
+Writes outputs/stats/stats_summary.json, stats_report.md and figures.
+Held-out split and shuffle nulls both use SEED for reproducibility.
+"""
+
 from __future__ import annotations
 
 import json

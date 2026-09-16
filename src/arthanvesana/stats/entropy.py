@@ -1,3 +1,8 @@
+"""Unigram and conditional entropy. Context counts are taken over context
+positions only (a sequence-final token never serves as a context), with an
+optional Miller-Madow bias correction on the conditional estimate.
+"""
+
 from __future__ import annotations
 
 import math

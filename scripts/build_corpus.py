@@ -1,3 +1,8 @@
+"""Build the tidy corpus. Usage from repo root: .venv\\Scripts\\python scripts\\build_corpus.py
+Writes data/processed/corpus.csv and corpus_summary.json; fails loudly if
+any validation check (hash, counts) does not hold.
+"""
+
 from __future__ import annotations
 
 import json

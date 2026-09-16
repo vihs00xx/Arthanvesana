@@ -1,3 +1,9 @@
+"""Dunning log-likelihood-ratio association. Bigrams are tested against full
+independence of the two signs; trigrams against pairwise independence
+P(c|a,b) = P(c|b), i.e. whether the first sign adds anything beyond the
+second. High LLR = strong evidence of bonding, independent of raw frequency.
+"""
+
 from __future__ import annotations
 
 import math

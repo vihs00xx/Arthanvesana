@@ -1,3 +1,9 @@
+"""Replication sprint R1-R7. Usage from repo root: .venv\\Scripts\\python scripts\\run_replication.py
+Writes outputs/replication/replication_summary.json, replication_report.md
+and figures. EBUDS_* constants are published reference values from
+Yadav et al. 2010 (different corpus: 377 signs), used as checkpoints.
+"""
+
 from __future__ import annotations
 
 import json

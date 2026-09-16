@@ -1,3 +1,9 @@
+"""Missing-sign restoration benchmark. Each position is masked and ranked by
+bidirectional bigram score P(m|left)*P(right|m) under a Witten-Bell model;
+reports top-k hit rates. The bigram matrix is precomputed once, so ranking
+is pure lookup.
+"""
+
 from __future__ import annotations
 
 from arthanvesana.stats.ngrams import NGramModel

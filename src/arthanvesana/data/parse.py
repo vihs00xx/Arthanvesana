@@ -1,3 +1,12 @@
+"""Tidy parsing of the raw Indus corpus JSON.
+
+Symbols are stored physical left-to-right; reading order is as-stored for
+direction 'L/R' and reversed for 'R/L'. ICIT '000' marks an illegible sign
+(missing data) and is gated out of sequences. Directions outside L/R and R/L
+are kept in stored order with reading_order_known=False. Conventions follow
+the upstream deposit's chr_lib; see data/PROVENANCE.md for the one deviation.
+"""
+
 from __future__ import annotations
 
 import hashlib

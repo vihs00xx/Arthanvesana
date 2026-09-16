@@ -1,3 +1,7 @@
+"""Rank-frequency analysis. Fits f(r) = a*(r+c)^-b (Zipf-Mandelbrot) and
+reports how many distinct signs cover 80% of inscription starts vs ends.
+"""
+
 from __future__ import annotations
 
 from collections import Counter
