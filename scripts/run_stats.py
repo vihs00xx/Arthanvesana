@@ -46,8 +46,14 @@ def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     FIG.mkdir(parents=True, exist_ok=True)
 
-    df = pd.read_csv(ROOT / "data" / "processed" / "corpus.csv", encoding="utf-8")
+    df = pd.read_csv(
+        ROOT / "data" / "processed" / "corpus.csv",
+        encoding="utf-8",
+        dtype={"sign_code": str},
+    )
     seqs = inscription_sequences(df)
+    if any("000" in seq for seq in seqs):
+        raise ValueError("placeholder sign 000 leaked into gated sequences")
 
     train, test = train_test_split(seqs, train_frac=0.8, seed=SEED)
     uniq = deduplicated(seqs)

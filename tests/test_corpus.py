@@ -74,6 +74,11 @@ def test_sequences_reconstruction():
 
 def test_csv_roundtrip():
     csv = ROOT / "data" / "processed" / "corpus.csv"
-    df = pd.read_csv(csv, encoding="utf-8")
+    df = pd.read_csv(csv, encoding="utf-8", dtype={"sign_code": str})
     assert len(df) == 19976
     assert list(df.columns)[:3] == ["inscription_id", "cisi", "site"]
+    assert "000" in set(df["sign_code"])
+    seqs = inscription_sequences(df)
+    assert len(seqs) == 5536
+    assert sum(len(s) for s in seqs) == 18065
+    assert all("000" not in seq for seq in seqs)
