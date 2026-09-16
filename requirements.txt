@@ -1,0 +1,12 @@
+numpy
+pandas
+scipy
+scikit-learn
+matplotlib
+seaborn
+gensim
+umap-learn
+networkx
+jupyter
+pytest
+tqdm
