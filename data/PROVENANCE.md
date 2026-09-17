@@ -11,7 +11,11 @@
   file was copied from the clone and verified byte-for-byte against the SHA-256
   published in the deposit README).
 
-Reproduce with: `.venv\Scripts\python src\arthanvesana\data\download.py`
+The raw file is already present locally; no download is needed for normal runs.
+On a fresh machine, obtain `sanitized_corpus.json` from the upstream repository
+at the pinned commit above and place it at `data/raw/sanitized_corpus.json`.
+Run `python scripts/build_corpus.py` from the project root to verify its SHA-256,
+validate the records, and rebuild the processed CSV and summary.
 
 ## Licensing / redistribution
 
