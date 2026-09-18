@@ -17,13 +17,25 @@ def rank_frequencies(seqs: list[list[str]]) -> np.ndarray:
 def mandelbrot_fit(freqs: np.ndarray) -> dict:
     from scipy.optimize import curve_fit
 
+    freqs = np.asarray(freqs, dtype=float)
+    if freqs.ndim != 1 or len(freqs) < 3:
+        raise ValueError("Zipf-Mandelbrot fitting requires at least three frequencies")
+    if not np.all(np.isfinite(freqs)) or np.any(freqs <= 0):
+        raise ValueError("frequencies must be finite and positive")
     ranks = np.arange(1, len(freqs) + 1, dtype=float)
 
     def model(r, a, b, c):
         return a * np.power(r + c, -b)
 
     popt, _ = curve_fit(
-        model, ranks, freqs, p0=(freqs[0], 1.0, 1.0), maxfev=20000
+        model,
+        ranks,
+        freqs,
+        p0=(freqs[0], 1.0, 1.0),
+        bounds=((0.0, 0.0, 0.0), (np.inf, np.inf, np.inf)),
+        method="dogbox",
+        x_scale="jac",
+        maxfev=20000,
     )
     pred = model(ranks, *popt)
     ss_res = float(np.sum((freqs - pred) ** 2))

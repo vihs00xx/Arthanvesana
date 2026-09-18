@@ -7,10 +7,10 @@ from __future__ import annotations
 
 
 def greedy_segmentation(
-    seq: list[str], pair_score: dict[tuple, float], min_score: float = 0.0
-) -> tuple[list, int]:
-    tokens = [(s,) for s in seq]
-    rounds = 0
+    seq: list[str], pair_score: dict[tuple[str, str], float], min_score: float = 0.0
+) -> tuple[list[tuple[str, ...]], int]:
+    tokens: list[tuple[str, ...]] = [(s,) for s in seq]
+    merge_count = 0
     while len(tokens) > 1:
         best = None
         best_score = min_score
@@ -22,11 +22,14 @@ def greedy_segmentation(
         if best is None:
             break
         tokens = tokens[:best] + [tokens[best] + tokens[best + 1]] + tokens[best + 2 :]
-        rounds += 1
-    return tokens, rounds
+        merge_count += 1
+    return tokens, merge_count
 
 
-def segmentation_heights(
-    seqs: list[list[str]], pair_score: dict[tuple, float]
+def segmentation_merge_counts(
+    seqs: list[list[str]], pair_score: dict[tuple[str, str], float]
 ) -> list[tuple[int, int]]:
     return [(len(s), greedy_segmentation(s, pair_score)[1]) for s in seqs]
+
+
+segmentation_heights = segmentation_merge_counts

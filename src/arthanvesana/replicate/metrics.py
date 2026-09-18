@@ -11,15 +11,20 @@ from __future__ import annotations
 import math
 import random
 from collections import Counter
+from collections.abc import Callable, Hashable
+from typing import TypeVar
+
+T = TypeVar("T")
+K = TypeVar("K", bound=Hashable)
 
 
 def bootstrap_ci(
-    seqs: list,
-    stat,
+    seqs: list[T],
+    stat: Callable[[list[T]], float],
     n_reps: int = 1000,
     seed: int = 0,
     level: float = 0.95,
-) -> dict:
+) -> dict[str, float]:
     rng = random.Random(seed)
     n = len(seqs)
     vals = []
@@ -37,29 +42,35 @@ def bootstrap_ci(
     }
 
 
-def mrr(ranks: list) -> float:
+def mrr(ranks: list[int | None]) -> float:
     if not ranks:
         return 0.0
     return sum(1.0 / r for r in ranks if r) / len(ranks)
 
 
 def ece(confidences: list[float], correct: list[bool], bins: int = 10) -> float:
-    buckets: list[list] = [[] for _ in range(bins)]
+    if not isinstance(bins, int) or bins <= 0:
+        raise ValueError("bins must be a positive integer")
+    if len(confidences) != len(correct):
+        raise ValueError("confidences and correct must have equal lengths")
+    if any(not math.isfinite(c) or not 0.0 <= c <= 1.0 for c in confidences):
+        raise ValueError("confidences must be finite probabilities")
+    buckets: list[list[tuple[float, float]]] = [[] for _ in range(bins)]
     for c, ok in zip(confidences, correct):
         b = min(int(c * bins), bins - 1)
-        buckets[b].append(1.0 if ok else 0.0)
+        buckets[b].append((c, 1.0 if ok else 0.0))
     total = len(confidences)
     err = 0.0
-    for i, bucket in enumerate(buckets):
+    for bucket in buckets:
         if not bucket:
             continue
-        acc = sum(bucket) / len(bucket)
-        conf = (i + 0.5) / bins
-        err += len(bucket) / total * abs(acc - conf) if total else 0.0
+        acc = math.fsum(ok for _, ok in bucket) / len(bucket)
+        conf = math.fsum(c for c, _ in bucket) / len(bucket)
+        err += len(bucket) / total * abs(acc - conf)
     return err
 
 
-def js_divergence(p: Counter, q: Counter) -> float:
+def js_divergence(p: Counter[K], q: Counter[K]) -> float:
     keys = set(p) | set(q)
     tp = sum(p.values())
     tq = sum(q.values())

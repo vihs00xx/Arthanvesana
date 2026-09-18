@@ -27,7 +27,7 @@ def _mkn_discounts(counts: Counter) -> tuple:
     coc = Counter(counts.values())
     n1, n2, n3, n4 = (coc.get(i, 0) for i in (1, 2, 3, 4))
     if 0 in (n1, n2, n3, n4):
-        d = n1 / (n1 + 2 * n2) if (n1 + 2 * n2) else 0.75
+        d = n1 / (n1 + 2 * n2) if n1 else 0.75
         return (d, d, d)
     y = n1 / (n1 + 2 * n2)
     d1 = max(1 - 2 * y * n2 / n1, 0.0)
@@ -50,6 +50,7 @@ class NGramModel:
         self.method = method
         self.lam = lam
         self.vocab = {s for seq in train for s in seq} | {"<UNK>"}
+        self.vocab_order = tuple(sorted(self.vocab))
         self.vsize = len(self.vocab)
         padded = [["<S>"] * (n - 1) + self._map(seq) for seq in train]
         self.orders: list[Counter] = [count_ngrams(padded, i) for i in range(n + 1)]
@@ -100,11 +101,11 @@ class NGramModel:
 
     def _dist_mkn(self, order: int, context: tuple) -> dict:
         if order == 0:
-            return {w: 1.0 / self.vsize for w in self.vocab}
+            return {w: 1.0 / self.vsize for w in self.vocab_order}
         fc = self.mkn_followers[order - 1].get(context, Counter()) if order > 1 else None
         if order == 1:
             counts = {
-                w: self.mkn_levels[1].get((w,), 0) for w in self.vocab
+                w: self.mkn_levels[1].get((w,), 0) for w in self.vocab_order
             }
             total = sum(counts.values())
             if total == 0:
@@ -120,7 +121,7 @@ class NGramModel:
             lower = self._dist_mkn(order - 1, context[1:])
         out = {}
         gamma_num = 0.0
-        for w in self.vocab:
+        for w in self.vocab_order:
             c = counts.get(w, 0)
             if c == 0:
                 out[w] = 0.0
@@ -134,7 +135,7 @@ class NGramModel:
                 out[w] = max(c - d3, 0.0)
                 gamma_num += d3
         gamma = gamma_num / total if total else 0.0
-        for w in self.vocab:
+        for w in self.vocab_order:
             out[w] = out[w] / total if total else 0.0
             out[w] += gamma * lower[w]
         return out
@@ -144,16 +145,16 @@ class NGramModel:
             denom = self.total + self.k * self.vsize
             return {
                 w: (self.orders[1].get((w,), 0) + self.k) / denom
-                for w in self.vocab
+                for w in self.vocab_order
             }
         fc = self.followers[order - 1].get(context, Counter())
         total = sum(fc.values())
         denom = total + self.k * self.vsize
-        return {w: (fc.get(w, 0) + self.k) / denom for w in self.vocab}
+        return {w: (fc.get(w, 0) + self.k) / denom for w in self.vocab_order}
 
     def _dist_wb(self, order: int, context: tuple) -> dict:
         if order == 1:
-            counts = {w: self.orders[1].get((w,), 0) for w in self.vocab}
+            counts = {w: self.orders[1].get((w,), 0) for w in self.vocab_order}
             total = sum(counts.values())
             return self._wb_from_counts(counts, total)
         fc = self.followers[order - 1].get(context, Counter())
@@ -167,7 +168,7 @@ class NGramModel:
         n_types = len(seen)
         n_unseen = self.vsize - n_types
         out = {}
-        for w in self.vocab:
+        for w in self.vocab_order:
             if w in seen:
                 out[w] = counts[w] / (total + n_types)
             elif n_unseen:
@@ -178,12 +179,12 @@ class NGramModel:
 
     def _dist_interp(self, order: int, context: tuple) -> dict:
         if order == 1:
-            counts = {w: self.orders[1].get((w,), 0) for w in self.vocab}
+            counts = {w: self.orders[1].get((w,), 0) for w in self.vocab_order}
             total = sum(counts.values())
             if total == 0:
-                return {w: 1.0 / self.vsize for w in self.vocab}
+                return {w: 1.0 / self.vsize for w in self.vocab_order}
             out = {}
-            for w in self.vocab:
+            for w in self.vocab_order:
                 ml = counts[w] / total if total else 0.0
                 out[w] = self.lam * ml + (1 - self.lam) / self.vsize
             return out
@@ -193,7 +194,7 @@ class NGramModel:
         if total == 0:
             return lower
         out = {}
-        for w in self.vocab:
+        for w in self.vocab_order:
             ml = fc.get(w, 0) / total if total else 0.0
             out[w] = self.lam * ml + (1 - self.lam) * lower[w]
         return out

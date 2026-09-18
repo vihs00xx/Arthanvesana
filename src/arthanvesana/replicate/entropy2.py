@@ -8,27 +8,33 @@ from __future__ import annotations
 
 import math
 from collections import Counter
+from collections.abc import Hashable
+from typing import TypeVar
+
+K = TypeVar("K", bound=Hashable)
 
 
-def chao_shen(counts: Counter) -> float:
+def chao_shen(counts: Counter[K]) -> float:
+    if any(not math.isfinite(v) or v < 0 or v != int(v) for v in counts.values()):
+        raise ValueError("counts must be finite nonnegative integers")
     n = sum(counts.values())
     if n == 0:
         return 0.0
     singletons = sum(1 for v in counts.values() if v == 1)
-    coverage = 1.0 - singletons / n
-    total = 0.0
+    if singletons == n:
+        raise ValueError("Chao-Shen estimate is unsupported for all-singleton samples")
+    coverage = (n - singletons) / n
+    terms = []
     for v in counts.values():
-        p = coverage * v / n
-        if p <= 0.0:
+        p = coverage * (v / n)
+        if p == 0.0 or p == 1.0:
             continue
-        denom = 1.0 - (1.0 - p) ** n
-        if denom <= 0.0:
-            continue
-        total += p * math.log2(p) / denom
-    return -total
+        denom = -math.expm1(n * math.log1p(-p))
+        terms.append(-p * math.log2(p) / denom)
+    return math.fsum(terms)
 
 
-def shrinkage_entropy(counts: Counter) -> float:
+def shrinkage_entropy(counts: Counter[K]) -> float:
     n = sum(counts.values())
     if n == 0:
         return 0.0
@@ -45,5 +51,5 @@ def shrinkage_entropy(counts: Counter) -> float:
     return -sum(v * math.log2(v) for v in shrunk.values() if v > 0.0)
 
 
-def unigram_counts(seqs: list[list[str]]) -> Counter:
+def unigram_counts(seqs: list[list[str]]) -> Counter[str]:
     return Counter(s for seq in seqs for s in seq)

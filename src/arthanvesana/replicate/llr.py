@@ -30,10 +30,10 @@ def _llr_2x2(k11: int, k12: int, k21: int, k22: int) -> float:
     return 2.0 * total
 
 
-def bigram_llr(seqs: list[list[str]]) -> list[tuple[tuple, int, float]]:
-    first: Counter = Counter()
-    second: Counter = Counter()
-    pairs: Counter = Counter()
+def bigram_llr(seqs: list[list[str]]) -> list[tuple[tuple[str, str], int, float]]:
+    first: Counter[str] = Counter()
+    second: Counter[str] = Counter()
+    pairs: Counter[tuple[str, str]] = Counter()
     total = 0
     for seq in seqs:
         for a, b in zip(seq, seq[1:]):
@@ -52,21 +52,17 @@ def bigram_llr(seqs: list[list[str]]) -> list[tuple[tuple, int, float]]:
     return rows
 
 
-def trigram_llr(seqs: list[list[str]]) -> list[tuple[tuple, int, float]]:
-    triples: Counter = Counter()
-    contexts: Counter = Counter()
-    follows: Counter = Counter()
+def trigram_llr(seqs: list[list[str]]) -> list[tuple[tuple[str, str, str], int, float]]:
+    triples: Counter[tuple[str, str, str]] = Counter()
+    contexts: Counter[tuple[str, str]] = Counter()
+    follows: Counter[tuple[str, str]] = Counter()
     for seq in seqs:
         for a, b, c in zip(seq, seq[1:], seq[2:]):
             triples[(a, b, c)] += 1
             contexts[(a, b)] += 1
             follows[(b, c)] += 1
-    pair_ctx: Counter = Counter()
-    for seq in seqs:
-        for a, b in zip(seq, seq[1:]):
-            pair_ctx[(a, b)] += 1
-    b_ctx: Counter = Counter()
-    for (a, b), v in pair_ctx.items():
+    b_ctx: Counter[str] = Counter()
+    for (_a, b), v in contexts.items():
         b_ctx[b] += v
     rows = []
     for (a, b, c), t in triples.items():

@@ -6,29 +6,30 @@ agreement comparison with the greedy LLR segmenter.
 
 from __future__ import annotations
 
-import tempfile
+import random
 from collections import Counter
-from pathlib import Path
 
 
-def train(seqs: list[list[str]]):
+def train(seqs: list[list[str]], seed: int = 0):
     import morfessor
 
-    counts = Counter(tuple(s) for s in seqs)
-    with tempfile.TemporaryDirectory() as tmp:
-        corpus = Path(tmp) / "corpus.txt"
-        with open(corpus, "w", encoding="utf-8") as fh:
-            for seq, c in counts.items():
-                fh.write(f"{c} {' '.join(seq)}\n")
-        io = morfessor.MorfessorIO()
-        data = list(io.read_corpus_file(str(corpus)))
-    model = morfessor.BaselineModel()
-    model.load_data(data)
-    model.train_batch()
+    counts = Counter(tuple(s) for s in seqs if s)
+    if not counts:
+        raise ValueError("Morfessor training requires a nonempty sequence")
+    state = random.getstate()
+    try:
+        random.seed(seed)
+        model = morfessor.BaselineModel()
+        model.load_data([(count, seq) for seq, count in sorted(counts.items())])
+        model.train_batch()
+    finally:
+        random.setstate(state)
     return model
 
 
 def segment(model, seq: list[str]) -> list[tuple]:
+    if not seq:
+        return []
     parts = model.viterbi_segment(tuple(seq))[0]
     out = []
     for p in parts:
