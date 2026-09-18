@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .parse import MISSING, REQUIRED_KEYS, _CODE_RE
+from .parse import _CODE_RE, MISSING, REQUIRED_KEYS, parse_bool
 
 EXPECTED = {
     "inscriptions": 5704,
@@ -49,6 +49,12 @@ def validate_raw(records: list[dict]) -> dict:
 
 
 def validate_tidy(df: pd.DataFrame) -> dict:
+    df = df.copy()
+    for column in ("is_missing", "reading_order_known", "complete"):
+        if column in df:
+            df[column] = df[column].map(parse_bool)
+    if not df["is_missing"].equals(df["sign_code"].eq(MISSING)):
+        raise _fail("missing-flags", "is_missing disagrees with sign_code")
     report: dict = {}
     report["token_rows"] = len(df)
     if len(df) != EXPECTED["tokens"]:
