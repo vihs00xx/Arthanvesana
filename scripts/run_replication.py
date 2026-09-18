@@ -1,11 +1,6 @@
-"""Replication sprint R1-R7. Usage from repo root: .venv\\Scripts\\python scripts\\run_replication.py
-Writes outputs/replication/replication_summary.json, replication_report.md
-and figures. EBUDS_* constants are published reference values from
-Yadav et al. 2010 (different corpus: 377 signs), used as checkpoints.
-"""
-
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import sys
@@ -21,19 +16,19 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from arthanvesana.data.parse import inscription_sequences
+from arthanvesana.data.parse import analysis_records
 from arthanvesana.replicate.llr import bigram_llr, trigram_llr
-from arthanvesana.replicate.region import cross_perplexity, site_sequences
+from arthanvesana.replicate.region import cross_perplexity, site_records
 from arthanvesana.replicate.restore import restoration_accuracy
-from arthanvesana.replicate.segment import segmentation_heights
+from arthanvesana.replicate.segment import segmentation_merge_counts
 from arthanvesana.replicate.zipf import (
     beginner_ender_coverage,
     mandelbrot_fit,
     rank_frequencies,
 )
-from arthanvesana.stats.entropy import conditional_entropy, unigram_entropy
+from arthanvesana.stats.entropy import conditional_entropy, mutual_information, unigram_entropy
 from arthanvesana.stats.ngrams import NGramModel, top_ngrams
-from arthanvesana.stats.sampling import shuffled_corpus, train_test_split
+from arthanvesana.stats.sampling import shuffled_corpus, split_records
 
 SEED = 0
 OUT = ROOT / "outputs" / "replication"
@@ -53,14 +48,21 @@ def main() -> None:
         encoding="utf-8",
         dtype={"sign_code": str},
     )
-    seqs = inscription_sequences(df)
+    records = analysis_records(df, gap_policy="split", known_direction_only=True)
+    train_records, test_records, split = split_records(records, track="artifact", seed=SEED)
+    seqs = [r["sequence"] for r in records]
+    train = [r["sequence"] for r in train_records]
+    test = [r["sequence"] for r in test_records]
+    complete_seqs = [r["sequence"] for r in records if r["start_complete"] and r["end_complete"]]
     if any("000" in s for s in seqs):
-        raise ValueError("placeholder sign 000 leaked into gated sequences")
-    train, test = train_test_split(seqs, train_frac=0.8, seed=SEED)
+        raise ValueError("placeholder sign 000 leaked into analysis spans")
+    if not train or not test:
+        raise ValueError(f"Nonempty artifact-grouped partitions required: {split}")
+    vocab_size = len({sign for seq in seqs for sign in seq})
 
     h1 = unigram_entropy(seqs)
     h2, _ = conditional_entropy(seqs, 1)
-    mi = h1 - h2
+    mi = mutual_information(seqs)
 
     ppl = {}
     for method in ("laplace", "wittenbell", "interp"):
@@ -77,17 +79,21 @@ def main() -> None:
 
     freqs = rank_frequencies(seqs)
     zm = mandelbrot_fit(freqs)
-    be = beginner_ender_coverage(seqs)
+    be = beginner_ender_coverage(complete_seqs)
 
-    restore = restoration_accuracy(train, test)
+    restore = restoration_accuracy(train_records, test_records)
 
-    sites = site_sequences(df)
-    region = cross_perplexity(sites)
+    sites = site_records(df, gap_policy="split", known_direction_only=True)
+    region_report = cross_perplexity(
+        sites, track="artifact", seed=SEED, return_report=True,
+        common_vocabulary=True, equal_train_size=True,
+    )
+    region = region_report["matrix"]
 
     pair_score = {pair: v for pair, _, v in llr2}
     long_seqs = [s for s in seqs if len(s) >= 10]
-    real_h = segmentation_heights(long_seqs, pair_score)
-    null_h = segmentation_heights(
+    real_h = segmentation_merge_counts(long_seqs, pair_score)
+    null_h = segmentation_merge_counts(
         shuffled_corpus(long_seqs, seed=SEED, n_replicates=1)[0], pair_score
     )
 
@@ -96,9 +102,18 @@ def main() -> None:
 
     summary = {
         "seed": SEED,
+        "split": split,
+        "methods": {
+            "gap_policy": "split", "known_direction_only": True,
+            "model_unit": "contiguous observed span; model starts are not inscription boundaries",
+            "positional_subset": "both start_complete and end_complete",
+            "n_complete_spans": len(complete_seqs),
+            "mi": "joint adjacent-pair marginals, not H1 minus H2",
+            "published_comparisons": "descriptive only; different corpora and protocols",
+        },
         "r1_entropy": {
-            "ours": {"h1": h1, "mi": mi, "h2": h2, "vocab": 713,
-                     "uniform_baseline": math.log2(713)},
+            "ours": {"h1": h1, "mi": mi, "h2": h2, "vocab": vocab_size,
+                     "uniform_baseline": math.log2(vocab_size)},
             "ebuds_published": {"h1": EBUDS_H1, "mi": EBUDS_MI,
                                 "vocab": 377,
                                 "uniform_baseline": math.log2(377)},
@@ -127,12 +142,17 @@ def main() -> None:
         "r5_restoration": restore,
         "r5_yadav_top1": 0.75,
         "r6_region": region,
+        "r6_region_report": region_report,
         "r7_segmentation": {
             "n_long": len(long_seqs),
-            "mean_rounds_per_length_real": ratio(real_h),
-            "mean_rounds_per_length_null": ratio(null_h),
-            "heights_real": real_h,
-            "heights_null": null_h,
+            "n_long_complete_both_ends": sum(
+                r["start_complete"] and r["end_complete"]
+                for r in records if len(r["sequence"]) >= 10
+            ),
+            "mean_merges_per_length_real": ratio(real_h),
+            "mean_merges_per_length_null": ratio(null_h),
+            "merge_counts_real": real_h,
+            "merge_counts_null": null_h,
         },
     }
     with open(OUT / "replication_summary.json", "w", encoding="utf-8") as fh:
@@ -143,9 +163,16 @@ def main() -> None:
     lines = []
     lines.append("# Replication sprint report")
     lines.append("")
-    lines.append("Corpus: ICIT-derived, 5,536 gated sequences, 713 signs. "
-                 "Published checkpoints use the EBUDS corpus "
+    lines.append(f"Corpus: ICIT-derived, {len(seqs)} known-direction observed spans, "
+                 f"{vocab_size} signs. Published checkpoints use the EBUDS corpus "
                  "(Mahadevan-derived, 377 signs appearing).")
+    lines.append("")
+    lines.append("Methods: known-direction records split at gaps, with artifact-, "
+                 "inscription- and duplicate-linked holdout groups. Models use "
+                 "contiguous observed spans; artificial model starts are not "
+                 f"inscription boundaries. Positional coverage uses {len(complete_seqs)} "
+                 "records with both ends complete. Published checkpoints are "
+                 "descriptive only, from different corpora and protocols.")
     lines.append("")
     lines.append("## R1 entropy vs languages")
     lines.append("")
@@ -153,9 +180,9 @@ def main() -> None:
                  f"(uniform baseline {math.log2(713):.2f}).")
     lines.append(f"EBUDS published: H1 {EBUDS_H1}, MI {EBUDS_MI} "
                  f"(uniform baseline {math.log2(377):.2f}).")
-    lines.append("Our MI is higher (3.4 vs 2.2): bigram constraints bind "
-                 "tighter here, consistent with shorter, more formulaic "
-                 "texts and a larger sign inventory spreading unigram mass.")
+    lines.append("MI differences across corpora with different inventories and "
+                 "length distributions are descriptive; they do not license "
+                 "cross-corpus linguistic claims.")
     lines.append("")
     lines.append("## R2 perplexity by order and smoothing")
     lines.append("")
@@ -166,12 +193,10 @@ def main() -> None:
                      f"{ppl['wittenbell'][i]:.2f} | {ppl['interp'][i]:.2f} | "
                      f"{YADAV_PPL[i]:.2f} |")
     lines.append("")
-    best = min(ppl["interp"][1:3])
     lines.append(f"Best bigram/trigram (interp): {ppl['interp'][1]:.2f} / "
-                 f"{ppl['interp'][2]:.2f}. Normalized by vocabulary size "
-                 f"(ours 713, EBUDS 377): {ppl['interp'][2] / 713:.4f} vs "
-                 f"{YADAV_PPL[2] / 377:.4f} - the remaining level gap is "
-                 f"almost entirely vocabulary size.")
+                 f"{ppl['interp'][2]:.2f}. Vocabulary-size-normalized comparisons "
+                 "across corpora are not reported; perplexity levels are not "
+                 "comparable across different sign inventories and protocols.")
     lines.append("")
     lines.append("## R3 significant vs frequent pairs")
     lines.append("")
@@ -199,19 +224,19 @@ def main() -> None:
     for tr, row in region.items():
         lines.append(tr + ": " + ", ".join(f"{k}={v:.1f}" for k, v in row.items()))
     lines.append("")
-    lines.append("Self-perplexity is lowest for Harappa, Mohenjo-daro and "
-                 "Lothal, indicating site-distinctive sign usage. Kalibangan "
-                 "is flat across models; Dholavira's small sample (238 "
-                 "inscriptions) leaves it inconclusive. All cells use "
-                 "held-out test portions, so self scores are comparable.")
+    lines.append("R6 uses equal-size artifact-grouped training sets with a common "
+                 "vocabulary; held-out cells are comparable within this protocol, "
+                 "not with published scores. Site-level conclusions are descriptive.")
     lines.append("")
-    lines.append("## R7 segmentation trees")
+    lines.append("## R7 segmentation merge counts")
     lines.append("")
-    lines.append(f"{len(long_seqs)} inscriptions of length >= 10. Mean merge "
+    lines.append(f"{len(long_seqs)} known-direction spans of length >= 10. Mean merge "
                  f"rounds per unit length: real "
-                 f"{summary['r7_segmentation']['mean_rounds_per_length_real']:.3f}, "
+                 f"{summary['r7_segmentation']['mean_merges_per_length_real']:.3f}, "
                  f"shuffled "
-                 f"{summary['r7_segmentation']['mean_rounds_per_length_null']:.3f}.")
+                 f"{summary['r7_segmentation']['mean_merges_per_length_null']:.3f}.")
+    lines.append("Merge counts are NOT tree heights; they do not identify "
+                 "linguistic units.")
     lines.append("")
     with open(OUT / "replication_report.md", "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines))
@@ -260,8 +285,8 @@ def make_figures(summary, freqs, zm):
     plt.savefig(FIG / "region.png", dpi=120)
     plt.close()
 
-    real = summary["r7_segmentation"]["heights_real"]
-    null = summary["r7_segmentation"]["heights_null"]
+    real = summary["r7_segmentation"]["merge_counts_real"]
+    null = summary["r7_segmentation"]["merge_counts_null"]
     plt.figure()
     if real:
         plt.scatter([L for L, _ in real], [r for _, r in real], label="real")
@@ -269,7 +294,7 @@ def make_figures(summary, freqs, zm):
         plt.scatter([L for L, _ in null], [r for _, r in null], label="shuffled")
     plt.xlabel("inscription length")
     plt.ylabel("merge rounds")
-    plt.title("Segmentation tree heights")
+    plt.title("Segmentation merge counts")
     plt.legend()
     plt.tight_layout()
     plt.savefig(FIG / "heights.png", dpi=120)
@@ -277,4 +302,5 @@ def make_figures(summary, freqs, zm):
 
 
 if __name__ == "__main__":
+    argparse.ArgumentParser(description="Replication analyses on known-direction, gap-split spans with artifact-grouped holdout.").parse_args()
     main()

@@ -5,7 +5,7 @@ always sum to 1.
 
 from __future__ import annotations
 
-from collections import Counter, defaultdict
+from collections import Counter
 
 
 def positional_counts(seqs: list[list[str]]) -> dict[str, Counter]:

@@ -1,12 +1,6 @@
-"""Methods upgrade runner. Usage from repo root: .venv\\Scripts\\python scripts\\run_upgrade.py
-Writes outputs/upgrade/upgrade_summary.json, upgrade_report.md and figures:
-Modified Kneser-Ney perplexity, modern entropy estimates, effect-size pair
-ranking, restoration metrics with calibration, regional log-Dice comparison,
-Morfessor segmentation agreement, and generative predictive checks.
-"""
-
 from __future__ import annotations
 
+import argparse
 import json
 import random
 import sys
@@ -17,14 +11,13 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from arthanvesana.data.parse import inscription_sequences
-from arthanvesana.replicate.assoc import ranked_pairs
+from arthanvesana.data.parse import analysis_records
+from arthanvesana.replicate.assoc import analyze_pairs, ranked_pairs
 from arthanvesana.replicate.entropy2 import (
     chao_shen,
     shrinkage_entropy,
@@ -36,9 +29,8 @@ from arthanvesana.replicate.metrics import (
     ece,
     js_divergence,
     mrr,
-    normalized_perplexity,
 )
-from arthanvesana.replicate.region import site_sequences
+from arthanvesana.replicate.region import site_records
 from arthanvesana.replicate.restore import restoration_records
 from arthanvesana.replicate.segment import greedy_segmentation
 from arthanvesana.replicate.segment_morfessor import (
@@ -52,12 +44,21 @@ from arthanvesana.stats.ngrams import NGramModel
 from arthanvesana.stats.sampling import (
     sample_sequence,
     shuffled_corpus,
-    train_test_split,
+    split_records,
 )
 
 SEED = 0
 OUT = ROOT / "outputs" / "upgrade"
 FIG = OUT / "figures"
+
+
+def artifact_clusters(records):
+    groups = {}
+    for record in records:
+        artifact = record.get("artifact_group")
+        key = ("artifact", tuple(artifact)) if artifact is not None else ("inscription", record["inscription_id"])
+        groups.setdefault(key, []).append(record)
+    return list(groups.values())
 
 
 def main() -> None:
@@ -69,10 +70,15 @@ def main() -> None:
         encoding="utf-8",
         dtype={"sign_code": str},
     )
-    seqs = inscription_sequences(df)
+    records = analysis_records(df, gap_policy="split", known_direction_only=True)
+    train_records, test_records, split = split_records(records, track="artifact", seed=SEED)
+    seqs = [r["sequence"] for r in records]
+    train = [r["sequence"] for r in train_records]
+    test = [r["sequence"] for r in test_records]
     if any("000" in s for s in seqs):
-        raise ValueError("placeholder sign 000 leaked into gated sequences")
-    train, test = train_test_split(seqs, train_frac=0.8, seed=SEED)
+        raise ValueError("placeholder sign 000 leaked into analysis spans")
+    if not train or not test:
+        raise ValueError(f"Nonempty artifact-grouped partitions required: {split}")
 
     mkn_curve = [NGramModel(train, n, method="mkn").perplexity(test) for n in (1, 2, 3, 4, 5)]
     wb_curve = [NGramModel(train, n, method="wittenbell").perplexity(test) for n in (1, 2, 3, 4, 5)]
@@ -83,30 +89,58 @@ def main() -> None:
         "chao_shen": chao_shen(counts),
         "shrinkage": shrinkage_entropy(counts),
     }
+    entropy_clusters = artifact_clusters(records)
     h2_boot = bootstrap_ci(
-        seqs, lambda s: conditional_entropy(s, 1)[0], n_reps=200, seed=SEED
+        entropy_clusters,
+        lambda groups: conditional_entropy([r["sequence"] for group in groups for r in group], 1)[0],
+        n_reps=200, seed=SEED,
+    )
+    h2_boot.update(
+        original=conditional_entropy(seqs, 1)[0],
+        interpretation="exploratory 95% percentile range; not bias-corrected",
+        resampling_unit="artifact_group, falling back to inscription_id",
+        n_clusters=len(entropy_clusters),
     )
 
-    ranked = ranked_pairs(seqs)
+    association = analyze_pairs(seqs, alpha=0.05, min_count=3, exact=True)
+    association.update(
+        family="all distinct observed ordered adjacent pairs in known-direction, gap-split spans; no count or LLR filtering before BH",
+        test="one-sided Fisher exact (greater), Benjamini-Hochberg adjusted p-values (q)",
+        caution="The family selects observed pairs and excludes unobserved pairs; overlapping windows are dependent. BH q thresholds are exploratory, not guaranteed FDR control or confirmation of linguistic units.",
+    )
+    ranked = [row for row in association["pairs"] if row["retained"]]
     llr2 = bigram_llr(seqs)
     llr_top = {pair for pair, _, _ in llr2[:20]}
     effect_top = {(r["pair"][0], r["pair"][1]) for r in ranked[:20]}
 
-    records, skipped = restoration_records(train, test)
-    ranks = [r["rank"] for r in records]
+    restored, skipped = restoration_records(train_records, test_records)
+    ranks = [r["rank"] for r in restored]
     restore_metrics = {
-        "top_1": sum(1 for r in ranks if r == 1) / len(ranks),
+        "top_1": sum(r == 1 for r in ranks) / len(ranks) if ranks else 0.0,
         "mrr": mrr(ranks),
-        "ece": ece([r["top_p"] for r in records], [r["hit"] for r in records]),
-        "n_masked": len(records),
+        "top_label_ece": ece([r["top_p"] for r in restored], [r["hit"] for r in restored]),
+        "n_masked": len(restored),
         "n_skipped_oov": skipped,
+        "n_oov": sum(r["rank"] is None for r in restored),
+        "oov_policy": "included as failures; reciprocal rank zero",
     }
-    mrr_boot = bootstrap_ci(records, lambda s: mrr([r["rank"] for r in s]), n_reps=1000, seed=SEED)
+    restore_clusters = artifact_clusters(restored)
+    mrr_boot = bootstrap_ci(
+        restore_clusters,
+        lambda groups: mrr([r["rank"] for group in groups for r in group]),
+        n_reps=1000, seed=SEED,
+    )
+    mrr_boot.update(
+        original=restore_metrics["mrr"],
+        resampling_unit="artifact_group, falling back to inscription_id",
+        n_clusters=len(restore_clusters),
+        interpretation="95% cluster percentile range, conditional on fitted model and split",
+    )
 
-    sites = site_sequences(df)
+    sites = site_records(df, gap_policy="split", known_direction_only=True)
     dice_by_site = {}
-    for site, sseqs in sites.items():
-        top = ranked_pairs(sseqs, min_count=2)[:30]
+    for site, rows in sites.items():
+        top = ranked_pairs([r["sequence"] for r in rows], min_count=2)[:30]
         dice_by_site[site] = {tuple(r["pair"]): r["logdice"] for r in top}
 
     gen_model = NGramModel(train, 2, method="wittenbell")
@@ -158,13 +192,22 @@ def main() -> None:
 
     summary = {
         "seed": SEED,
+        "split": split,
+        "methods": {
+            "gap_policy": "split", "known_direction_only": True,
+            "model_unit": "contiguous observed span; model starts are not inscription boundaries",
+            "restoration_boundaries": "record completeness respected",
+            "segmentation": "descriptive in-sample algorithm agreement, not linguistic units",
+            "regional_logdice": "descriptive full-span corpus ranking, not held-out inference",
+            "generative_check": "descriptive full-span corpus comparison; train-test divergence is not a pure sampling floor",
+        },
         "mkn_perplexity": mkn_curve,
         "wb_perplexity": wb_curve,
-        "mkn_normalized_trigram": normalized_perplexity(mkn_curve[2], 713),
         "entropy_estimators": entropy_est,
         "h2_bootstrap": h2_boot,
+        "association_inference": association,
         "effect_ranking": {
-            "n_significant": len(ranked),
+            "n_exploratory": len(ranked),
             "overlap_llr_top20": len(llr_top & effect_top),
             "top_by_npmi": [
                 {
@@ -207,55 +250,71 @@ def main() -> None:
                  ", ".join(f"{v:.2f}" for v in mkn_curve))
     lines.append("Perplexity n=1..5, Witten-Bell: " +
                  ", ".join(f"{v:.2f}" for v in wb_curve))
-    lines.append(f"MKN trigram normalized: "
-                 f"{summary['mkn_normalized_trigram']:.4f} (interp was 0.0678).")
+    lines.append("Methods: known-direction records split at gaps, with artifact-, "
+                 "inscription- and duplicate-linked holdout groups. Models use observed "
+                 "spans; artificial model starts are not inscription boundaries. "
+                 "Vocabulary-normalized cross-corpus conclusions are not warranted.")
     lines.append("")
     lines.append("## Entropy estimators")
     lines.append("")
     lines.append(f"H1 plugin {entropy_est['plugin']:.3f}, Chao-Shen "
                  f"{entropy_est['chao_shen']:.3f}, shrinkage "
                  f"{entropy_est['shrinkage']:.3f}.")
-    lines.append(f"H2 bootstrap 95% CI: [{h2_boot['lo']:.3f}, "
-                 f"{h2_boot['hi']:.3f}] (mean {h2_boot['mean']:.3f}).")
-    lines.append("Note: the bootstrap mean sits below the full-sample H2 "
-                 "(3.48) because resampling shrinks the effective sample and "
-                 "plugin entropy underestimates more on smaller samples. The "
-                 "interval reflects precision of the estimator, not accuracy.")
+    lines.append(f"H2 original sample value: {h2_boot['original']:.3f}; "
+                 f"exploratory cluster bootstrap 95% percentile range "
+                 f"[{h2_boot['lo']:.3f}, {h2_boot['hi']:.3f}] "
+                 f"(mean {h2_boot['mean']:.3f}).")
+    lines.append("The range reflects resampling variability across artifact groups "
+                 "conditional on this split, not bias-corrected uncertainty about "
+                 "H2, and should not be read as confirmation of linguistic units.")
     lines.append("")
     lines.append("## Effect-size pair ranking")
     lines.append("")
-    lines.append(f"{len(ranked)} LLR-significant pairs (p<0.001); overlap "
-                 f"with LLR top-20: {len(llr_top & effect_top)}/20.")
+    lines.append(f"{association['n_tested']} observed pairs tested with {association['test']}. "
+                 f"{len(ranked)} meet exploratory q <= {association['alpha']} and "
+                 f"count >= {association['min_count']}; overlap with LLR top-20: "
+                 f"{len(llr_top & effect_top)}/20.")
+    lines.append("Family: " + association["family"] + ".")
+    lines.append(association["caution"])
+    lines.append("All observed-family p-values and BH q-values (p_adj), including "
+                 "pairs below the count threshold, are in upgrade_summary.json "
+                 "under association_inference.pairs.")
     lines.append("Top by NPMI: " +
                  ", ".join(f"{r['pair'][0]}-{r['pair'][1]} ({r['npmi']:.2f})"
                            for r in ranked[:10]))
-    lines.append("NPMI 1.00 tops are rare exclusive bonds (signs occurring "
-                 "only together); min_count=3 admits them by design.")
+    lines.append("NPMI 1.00 entries are rare co-occurrence artifacts of small "
+                 "counts admitted by min_count=3; no linguistic-unit reading "
+                 "is implied.")
     lines.append("")
     lines.append("## Restoration metrics")
     lines.append("")
     lines.append(f"Top-1 {restore_metrics['top_1']:.3f}, MRR "
                  f"{restore_metrics['mrr']:.3f} "
                  f"(95% CI [{mrr_boot['lo']:.3f}, {mrr_boot['hi']:.3f}]), "
-                 f"ECE {restore_metrics['ece']:.3f}.")
+                 f"ECE {restore_metrics['top_label_ece']:.3f}.")
+    lines.append("Restoration masks are evaluated within observed spans only; "
+                 "OOV targets count as failures (reciprocal rank zero) rather "
+                 "than being excluded.")
     lines.append("")
     lines.append("## Generative check")
     lines.append("")
     lines.append(f"JS divergence real vs bigram-generated: unigram "
-                 f"{js_uni:.4f} (noise floor {floor_uni:.4f}), bigram "
-                 f"{js_bi:.4f} (noise floor {floor_bi:.4f}). 0 = identical; "
-                 f"the floors show how much divergence finite sampling alone "
-                 f"produces.")
+                 f"{js_uni:.4f} (train-test reference {floor_uni:.4f}), bigram "
+                 f"{js_bi:.4f} (train-test reference {floor_bi:.4f}). 0 = "
+                 f"identical; the reference divergences include model-free "
+                 f"split and site effects, so they overstate a pure sampling floor.")
     lines.append("")
     lines.append("## Segmentation agreement")
     lines.append("")
     seg = summary["segmentation_agreement"]
-    lines.append(f"Greedy-LLR (p<0.001 threshold) places "
-                 f"{seg['mean_greedy_cuts']:.2f} cuts per inscription; "
+    lines.append(f"Greedy-LLR (descriptive score cutoff 10.83, not a p-value threshold) places "
+                 f"{seg['mean_greedy_cuts']:.2f} cuts per span; "
                  f"Morfessor places {seg['mean_morfessor_cuts']:.2f}. "
                  f"Boundary F1: real {seg['mean_f1_real']:.3f}, shuffled "
                  f"{seg['mean_f1_null']:.3f} over {seg['n_compared']} "
-                 f"inscriptions.")
+                 f"spans of length 5-12.")
+    lines.append("Both segmenters are fit on the same observed spans; agreement "
+                 "measures algorithmic consistency, not recovered linguistic units.")
     lines.append("")
     with open(OUT / "upgrade_report.md", "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines))
@@ -286,4 +345,5 @@ def make_figures(summary):
 
 
 if __name__ == "__main__":
+    argparse.ArgumentParser(description="Upgraded analyses on known-direction, gap-split spans with artifact-grouped holdout.").parse_args()
     main()

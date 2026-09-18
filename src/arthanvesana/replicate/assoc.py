@@ -9,6 +9,8 @@ from __future__ import annotations
 import math
 from collections import Counter
 
+from scipy.stats import fisher_exact
+
 from .llr import _llr_2x2
 
 
@@ -91,3 +93,69 @@ def ranked_pairs(
         )
     rows.sort(key=lambda r: -r["npmi"])
     return rows
+
+
+bigram_tables = pair_contingency
+rank_pairs = ranked_pairs
+
+
+def benjamini_hochberg(p_values: list[float]) -> list[float]:
+    if any(not math.isfinite(p) or not 0.0 <= p <= 1.0 for p in p_values):
+        raise ValueError("p-values must be finite and between 0 and 1")
+    n = len(p_values)
+    order = sorted(range(n), key=p_values.__getitem__)
+    adjusted = [1.0] * n
+    running = 1.0
+    for i in range(n - 1, -1, -1):
+        index = order[i]
+        running = min(running, p_values[index] * n / (i + 1))
+        adjusted[index] = running
+    return adjusted
+
+
+def analyze_pairs(
+    seqs: list[list[str]], *, alpha: float = 0.05, min_count: int = 1, exact: bool = True
+) -> dict:
+    if not math.isfinite(alpha) or not 0.0 <= alpha <= 1.0:
+        raise ValueError("alpha must be finite and between 0 and 1")
+    if isinstance(min_count, bool) or not isinstance(min_count, int) or min_count < 1:
+        raise ValueError("min_count must be a positive integer")
+    tables = pair_contingency(seqs)
+    rows = []
+    for pair, table in tables.items():
+        k11, k12, k21, k22, total = table
+        p_value = (
+            float(fisher_exact([[k11, k12], [k21, k22]], alternative="greater").pvalue)
+            if exact else None
+        )
+        rows.append(
+            {
+                "pair": pair,
+                "count": k11,
+                "first_count": k11 + k12,
+                "second_count": k11 + k21,
+                "total": total,
+                "llr": _llr_2x2(*table[:4]),
+                "pmi": pmi(table),
+                "npmi": npmi(table),
+                "logdice": logdice(table),
+                "log_odds": log_odds(table),
+                "p_value": p_value,
+                "p_adj": None,
+                "retained": False,
+            }
+        )
+    if exact:
+        adjusted = benjamini_hochberg([row["p_value"] for row in rows])
+        for row, q in zip(rows, adjusted, strict=True):
+            row["p_adj"] = q
+            row["retained"] = q <= alpha and row["count"] >= min_count
+    rows.sort(key=lambda r: -r["npmi"])
+    return {
+        "pairs": rows,
+        "n_observed": len(tables),
+        "n_tested": len(tables) if exact else 0,
+        "n_retained": sum(row["retained"] for row in rows),
+        "alpha": alpha,
+        "min_count": min_count,
+    }

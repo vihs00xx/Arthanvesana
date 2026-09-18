@@ -1,10 +1,6 @@
-"""Phase-2 statistical baselines. Usage from repo root: .venv\\Scripts\\python scripts\\run_stats.py
-Writes outputs/stats/stats_summary.json, stats_report.md and figures.
-Held-out split and shuffle nulls both use SEED for reproducibility.
-"""
-
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from collections import Counter
@@ -19,14 +15,14 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from arthanvesana.data.parse import inscription_sequences
+from arthanvesana.data.parse import analysis_records
 from arthanvesana.stats.entropy import conditional_entropy, unigram_entropy
 from arthanvesana.stats.ngrams import NGramModel, top_ngrams
 from arthanvesana.stats.position import positional_profile
 from arthanvesana.stats.sampling import (
     deduplicated,
     shuffled_corpus,
-    train_test_split,
+    split_records,
 )
 
 SEED = 0
@@ -56,13 +52,19 @@ def main() -> None:
         encoding="utf-8",
         dtype={"sign_code": str},
     )
-    seqs = inscription_sequences(df)
+    records = analysis_records(df, gap_policy="split", known_direction_only=True)
+    train_records, test_records, split = split_records(records, track="artifact", seed=SEED)
+    seqs = [r["sequence"] for r in records]
+    train = [r["sequence"] for r in train_records]
+    test = [r["sequence"] for r in test_records]
+    complete_seqs = [r["sequence"] for r in records if r["start_complete"] and r["end_complete"]]
     if any("000" in seq for seq in seqs):
-        raise ValueError("placeholder sign 000 leaked into gated sequences")
+        raise ValueError("placeholder sign 000 leaked into analysis spans")
+    if not train or not test:
+        raise ValueError(f"Nonempty artifact-grouped partitions required: {split}")
 
-    train, test = train_test_split(seqs, train_frac=0.8, seed=SEED)
     uniq = deduplicated(seqs)
-    strain, stest = train_test_split(uniq, train_frac=0.8, seed=SEED)
+    strain, stest = deduplicated(train), deduplicated(test)
 
     models = {f"{n}gram": NGramModel(train, n) for n in (1, 2, 3)}
     smodels = {f"{n}gram": NGramModel(strain, n) for n in (1, 2, 3)}
@@ -90,12 +92,22 @@ def main() -> None:
         "h3": mean_sd(null_h3),
     }
 
-    profile = positional_profile(seqs, min_count=5)
+    profile = positional_profile(complete_seqs, min_count=5)
     prefix_like = sorted(profile, key=lambda r: -r["p_begin"])[:10]
     suffix_like = sorted(profile, key=lambda r: -r["p_end"])[:10]
 
     summary = {
         "seed": SEED,
+        "methods": {
+            "gap_policy": "split",
+            "known_direction_only": True,
+            "model_unit": "contiguous observed span; model starts are not inscription boundaries",
+            "positional_subset": "both start_complete and end_complete",
+            "n_complete_spans": len(complete_seqs),
+            "deduplication": "within each artifact-grouped partition, after splitting",
+        },
+        "split": split,
+        "split_dedup": {"source_split": split, "n_train": len(strain), "n_test": len(stest)},
         "n_train": len(train),
         "n_test": len(test),
         "n_unique_sequences": len(uniq),
@@ -121,13 +133,17 @@ def main() -> None:
     with open(OUT / "stats_summary.json", "w", encoding="utf-8") as fh:
         json.dump(summary, fh, indent=2, ensure_ascii=False)
 
-    make_figures(df, seqs, models, summary, nulls[0])
+    make_figures(seqs, complete_seqs, summary)
 
     lines = []
     lines.append("# Phase 2 — statistical baseline report")
     lines.append("")
-    lines.append(f"Train inscriptions: {len(train)}; test: {len(test)}; "
+    lines.append(f"Train spans: {len(train)}; test spans: {len(test)}; "
                  f"unique sequences: {len(uniq)}.")
+    lines.append("Methods: known-direction records split at missing signs; "
+                 "artifact-, inscription- and duplicate-linked records stay together. "
+                 "Models use contiguous observed spans, with artificial model starts, "
+                 "not inferred inscription boundaries. Deduplication is within the same partitions.")
     lines.append("")
     lines.append("## Held-out perplexity (Laplace k=1)")
     lines.append("")
@@ -148,9 +164,9 @@ def main() -> None:
     lines.append("Shuffled nulls (20 replicates, mean +/- sd): "
                  f"H1 {m1:.3f} +/- {s1:.4f}; H2 {m2:.3f} +/- {s2:.4f}; "
                  f"H3 {m3:.3f} +/- {s3:.4f}.")
-    lines.append("Unigram entropy is shuffle-invariant by construction; "
-                 "conditional entropies rise under shuffling, confirming "
-                 "sequential structure in the real corpus.")
+    lines.append("Unigram entropy is shuffle-invariant by construction. "
+                 "Within-span shuffles provide a descriptive order control, "
+                 "not evidence of linguistic units.")
     lines.append("")
     lines.append("## Positional extremes (min 5 occurrences)")
     lines.append("")
@@ -160,16 +176,28 @@ def main() -> None:
     lines.append("Most end-biased: " +
                  ", ".join(f"{r['sign']} ({r['p_end']:.2f})" for r in suffix_like))
     lines.append("")
-    lines.append("Length-1 inscriptions count toward both beginning and end.")
-    lines.append("Positional claims should be re-checked on the "
-                 "known-direction-only subset in follow-up work.")
+    lines.append(f"Positional analyses use only {len(complete_seqs)} known-direction "
+                 "records with both ends complete; split-span edges are excluded. "
+                 "Length-1 inscriptions count toward both beginning and end. "
+                 "Beginning/end bias does not establish prefixes or suffixes.")
     lines.append("")
     with open(OUT / "stats_report.md", "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines))
     print("\n".join(lines))
 
 
-def make_figures(df, seqs, models, summary, _null_example):
+def transition_probabilities(seqs, signs):
+    pairs = Counter(pair for seq in seqs for pair in zip(seq, seq[1:]))
+    totals = Counter()
+    for (source, _), count in pairs.items():
+        totals[source] += count
+    return [
+        [pairs[(a, b)] / totals[a] if totals[a] else 0.0 for b in signs]
+        for a in signs
+    ]
+
+
+def make_figures(seqs, complete_seqs, summary):
     uni = Counter(s for seq in seqs for s in seq)
     top_signs = [s for s, _ in uni.most_common(30)]
 
@@ -183,18 +211,9 @@ def make_figures(df, seqs, models, summary, _null_example):
     plt.savefig(FIG / "zipf.png", dpi=120)
     plt.close()
 
-    bi = Counter()
-    for seq in seqs:
-        for a, b in zip(seq, seq[1:]):
-            if a in top_signs and b in top_signs:
-                bi[(a, b)] += 1
     import numpy as np
 
-    mat = np.zeros((len(top_signs), len(top_signs)))
-    for i, a in enumerate(top_signs):
-        row_total = sum(bi[(a, b)] for b in top_signs)
-        for j, b in enumerate(top_signs):
-            mat[i, j] = bi[(a, b)] / row_total if row_total else 0.0
+    mat = np.asarray(transition_probabilities(seqs, top_signs))
     plt.figure(figsize=(10, 8))
     plt.imshow(mat, aspect="auto")
     plt.colorbar(label="P(next | current)")
@@ -208,7 +227,7 @@ def make_figures(df, seqs, models, summary, _null_example):
     plt.close()
 
     top25 = [s for s, _ in uni.most_common(25)]
-    rows = [r for r in positional_profile(seqs, 5) if r["sign"] in top25]
+    rows = [r for r in positional_profile(complete_seqs, 5) if r["sign"] in top25]
     order = {s: i for i, s in enumerate(top25)}
     rows.sort(key=lambda r: order[r["sign"]])
     pb = [r["p_begin"] for r in rows]
@@ -220,8 +239,8 @@ def make_figures(df, seqs, models, summary, _null_example):
     plt.bar(x, pm, width=0.25, label="middle")
     plt.bar(x + 0.25, pe, width=0.25, label="end")
     plt.xticks(x, [r["sign"] for r in rows], rotation=90, fontsize=7)
-    plt.ylabel("fraction of occurrences")
-    plt.title("Positional profile (top 25 signs)")
+    plt.ylabel("fraction of positional slots")
+    plt.title("Positional profile (both ends complete; top 25 signs)")
     plt.legend()
     plt.tight_layout()
     plt.savefig(FIG / "positional.png", dpi=120)
@@ -263,9 +282,9 @@ def make_figures(df, seqs, models, summary, _null_example):
     plt.figure()
     for n in names:
         plt.plot(xs, [r[n] for r in by_len], marker="o", label=n)
-    plt.xlabel("test inscription length (gated)")
+    plt.xlabel("test observed span length")
     plt.ylabel("perplexity")
-    plt.title("Perplexity by inscription length")
+    plt.title("Perplexity by observed span length")
     plt.legend()
     plt.tight_layout()
     plt.savefig(FIG / "perplexity_by_length.png", dpi=120)
@@ -273,4 +292,5 @@ def make_figures(df, seqs, models, summary, _null_example):
 
 
 if __name__ == "__main__":
+    argparse.ArgumentParser(description="Statistical baselines on known-direction, gap-split spans with artifact-grouped holdout.").parse_args()
     main()
