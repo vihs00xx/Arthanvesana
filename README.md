@@ -7,11 +7,7 @@ Inspired by the Sanskrit idea of searching and inquiry, **Arthanvesana** ("searc
 
 ## Status
 
-Early scaffold. Planned phases:
-
-1. **Corpus** — ingestion and validation of a machine-readable Indus sign corpus
-2. **Statistics** — frequencies, n-grams, transitions, positional analysis, shuffled controls
-3. **Embeddings** — sign vector representations (PPMI/SVD, skip-gram), clustering, visualization
+Corpus ingestion and validation, statistical baselines with shuffled controls, and grouped evaluation are implemented. Sign embeddings (PPMI/SVD, skip-gram), clustering, and visualization are planned.
 
 ## Source corpus
 
@@ -26,7 +22,28 @@ Early scaffold. Planned phases:
 python -m venv .venv
 .venv\Scripts\activate        # Windows
 pip install -r requirements.txt
+pip install -e .
 ```
+
+Run scripts from the repository root, e.g. `python scripts/build_corpus.py`.
+
+## Testing
+
+Install development tools with `python -m pip install -r requirements-dev.txt` (or `python -m pip install -e ".[dev]"`).
+
+```bash
+python -m pytest
+python -m ruff check .
+python -m mypy
+```
+
+Type checking currently covers five statistical core modules. Run `python scripts/run_stats.py`, `python scripts/run_replication.py`, and `python scripts/run_upgrade.py` to regenerate local reports. Defaults use known-direction, gap-split spans and artifact/duplicate-grouped holdouts; these results are not directly comparable to the earlier record-level splits.
+
+## Restoration robustness
+
+Run `python scripts/run_robustness.py --repeats 10` to compare the context model with training-only frequency and observed-position baselines. The same artifact/duplicate-grouped partitions are evaluated as readable spans, complete inscriptions, unique sequences, and complete unique sequences. Each model predicts the same masked positions; unseen target signs count as failures.
+
+The runner also holds out each site with at least 100 eligible inscriptions, removing linked artifacts and duplicate groups from training. Local `outputs/robustness/` files contain a text report and JSON with all split identities, paired differences, overlap checks, source/data hashes, and dependency versions. Reported standard deviations describe split variability, not confidence intervals over independent experiments. Use `--help` for input, output, seed, split-fraction, and site-threshold options.
 
 ## License
 

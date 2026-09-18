@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arthanvesana"
+version = "0.3.0"
+requires-python = ">=3.11"
+dependencies = ["numpy", "pandas", "scipy", "matplotlib", "morfessor"]
+
+[project.optional-dependencies]
+dev = ["ruff>=0.15,<0.16", "mypy>=1.19,<2", "pytest>=9.1,<10"]
+research = ["scikit-learn", "seaborn", "gensim", "umap-learn", "networkx", "jupyter", "tqdm"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501", "B905"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/*.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.11"
+files = [
+    "src/arthanvesana/stats/entropy.py",
+    "src/arthanvesana/replicate/llr.py",
+    "src/arthanvesana/replicate/entropy2.py",
+    "src/arthanvesana/replicate/metrics.py",
+    "src/arthanvesana/replicate/segment.py",
+]
+mypy_path = "src"
+follow_imports = "silent"
+strict = true

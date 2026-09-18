@@ -19,10 +19,13 @@ validate the records, and rebuild the processed CSV and summary.
 
 ## Licensing / redistribution
 
-The upstream deposit contains **no LICENSE file**, so the corpus file is kept
-in `data/raw/` (gitignored) and is **not redistributed** in this repository.
-Only derived artifacts (`data/processed/corpus.csv`, summary statistics) are
-tracked. Cite the upstream deposit and Parpola et al.'s CISI when using it.
+The upstream README currently declares the corpus **GPL-3.0** and scripts **MIT**.
+The raw corpus is kept in `data/raw/` (gitignored) and is not redistributed here.
+Derived artifacts (`data/processed/corpus.csv`, summary statistics) are tracked;
+whether redistribution of the processed CSV meets the upstream licensing
+requirements remains a question for the maintainer. This project's Apache 2.0
+license does not override upstream data licensing. Cite the upstream deposit
+and Parpola et al.'s CISI when using it.
 
 ## Published properties (deposit README, verified by `scripts/build_corpus.py`)
 
