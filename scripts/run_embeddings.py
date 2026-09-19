@@ -82,6 +82,16 @@ def _summarize_opt(values):
     return _summarize(values)
 
 
+def _fit_valid_split(train, seed):
+    fit, valid, _ = split_records(
+        train, 0.8, seed, track="artifact", group_duplicates=True
+    )
+    if not fit or not valid:
+        cut = max(1, len(train) // 2)
+        fit, valid = train[:cut], train[cut:]
+    return fit, valid
+
+
 def _role_labels(records):
     complete = [r["sequence"] for r in records if r["start_complete"] and r["end_complete"]]
     roles = {}
@@ -147,14 +157,18 @@ def render_report(summary):
         "same masked positions, and OOV-as-failure scoring as the bigram.",
         "SD describes split variability, NOT confidence intervals.",
         "",
-        "PPMI config sweep on seed 0 (top-1):",
+        "PPMI config sweep on seed 0 (validation top-1; grouped split",
+        "carved from training, test untouched during selection):",
     ]
     for row in summary["config_sweep"]:
         lines.append(
             f"window {row['window']}, dim {row['dim']}: "
             f"ppmi {row['embedding_top1']:.4f} vs bigram {row['bigram_top1']:.4f}"
         )
-    lines.append("Skip-gram config sweep on seed 0 (top-1):")
+    lines.append(
+        "Skip-gram config sweep on seed 0 (validation top-1; grouped split "
+        "carved from training, test untouched during selection):"
+    )
     for row in summary["skipgram_sweep"]:
         lines.append(
             f"window {row['window']}, dim {row['dim']}: "
@@ -225,12 +239,13 @@ def main(argv=None):
     records = analysis_records(frame, gap_policy="split", known_direction_only=True)
 
     seeds = list(range(args.seed, args.seed + args.repeats))
-    train0, test0, _ = split_records(records, 0.8, seeds[0], track="artifact", group_duplicates=True)
-    bigram0 = [r["rank"] for r in restoration_records(train0, test0, mask_length=1)[0]]
+    train0, _, _ = split_records(records, 0.8, seeds[0], track="artifact", group_duplicates=True)
+    fit0, valid0 = _fit_valid_split(train0, seeds[0])
+    bigram0 = [r["rank"] for r in restoration_records(fit0, valid0, mask_length=1)[0]]
     sweep = []
     for window in WINDOWS:
         for dim in DIMS:
-            emb = embedding_restoration_ranks(train0, test0, window, dim)
+            emb = embedding_restoration_ranks(fit0, valid0, window, dim)
             assert len(emb) == len(bigram0)
             sweep.append({
                 "window": window, "dim": dim,
@@ -242,7 +257,7 @@ def main(argv=None):
     sg_sweep = []
     for sg_window in SG_WINDOWS:
         for sg_dim in SG_DIMS:
-            ranks = skipgram_restoration_ranks(train0, test0, sg_window, sg_dim, args.seed)
+            ranks = skipgram_restoration_ranks(fit0, valid0, sg_window, sg_dim, args.seed)
             assert len(ranks) == len(bigram0)
             sg_sweep.append({
                 "window": sg_window, "dim": sg_dim,

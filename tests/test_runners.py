@@ -2,6 +2,7 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from arthanvesana.data.parse import to_tidy
@@ -46,6 +47,109 @@ def test_robustness_runner_writes_reproducible_report(tmp_path):
     report = (output / "robustness_report.txt").read_text(encoding="utf-8")
     assert "NOT confidence intervals" in report
     assert "context_vs_position" in report
+
+
+def test_transformer_runner_writes_reproducible_report(tmp_path):
+    torch = pytest.importorskip("torch")
+    assert torch is not None
+    runner = load_runner("run_transformer")
+    raw = [
+        {
+            "id": str(i), "cisi": str(i), "site": "A" if i < 6 else "B",
+            "direction": "L/R", "complete": True,
+            "symbols": ["001", f"{100 + (i % 2):03d}", "003"],
+        }
+        for i in range(12)
+    ]
+    corpus = tmp_path / "corpus.csv"
+    to_tidy(raw).to_csv(corpus, index=False)
+    output = tmp_path / "results"
+    summary = runner.main([
+        "--corpus", str(corpus), "--output", str(output),
+        "--repeats", "1", "--max-epochs", "2", "--patience", "2",
+    ])
+    saved = json.loads((output / "transformer_summary.json").read_text(encoding="utf-8"))
+    assert saved == summary
+    assert saved["n_ok"] == 1
+    assert len(saved["config_selection"]) == len(runner.GRID)
+    for run in saved["runs"]:
+        assert run["transformer"]["n_masked"] == run["bigram"]["n_masked"]
+    report = (output / "transformer_report.txt").read_text(encoding="utf-8")
+    assert "NOT confidence intervals" in report
+
+
+def test_stratified_runner_writes_reproducible_report(tmp_path):
+    runner = load_runner("run_stratified")
+    raw = [
+        {
+            "id": str(i), "cisi": f"C-{i % 3}", "site": "A",
+            "direction": "L/R", "complete": True,
+            "symbols": ["001", f"{100 + (i % 4):03d}", "003"],
+        }
+        for i in range(24)
+    ]
+    corpus = tmp_path / "corpus.csv"
+    to_tidy(raw).to_csv(corpus, index=False)
+    metadata = tmp_path / "metadata.csv"
+    pd.DataFrame([
+        {"cisi": "C-0", "ext_id": "S0", "motif": "Bull1", "ext_direction": "R-L",
+         "ext_line_count": 1, "ext_object_type": "unknown", "source": "test"},
+        {"cisi": "C-1", "ext_id": "S1", "motif": "Gaur", "ext_direction": "R-L",
+         "ext_line_count": 1, "ext_object_type": "unknown", "source": "test"},
+        {"cisi": "C-2", "ext_id": "S2", "motif": "unknown", "ext_direction": "L-R",
+         "ext_line_count": 1, "ext_object_type": "unknown", "source": "test"},
+    ]).to_csv(metadata, index=False)
+    output = tmp_path / "results"
+    summary = runner.main([
+        "--corpus", str(corpus), "--metadata", str(metadata),
+        "--output", str(output),
+    ])
+    saved = json.loads((output / "stratified_summary.json").read_text(encoding="utf-8"))
+    assert saved == summary
+    assert summary["direction"]["agreement"] == 2 / 3
+    assert set(summary["motif_groups"]) == {"bull", "other_known", "unknown"}
+    report = (output / "stratified_report.txt").read_text(encoding="utf-8")
+    assert "Motif groups" in report
+
+
+def test_audit_runner_writes_reproducible_report(tmp_path):
+    runner = load_runner("run_audit")
+    raw = [
+        {"id": "a", "cisi": "C-1", "site": "A", "direction": "L/R",
+         "complete": True, "symbols": ["001", "002"]},
+        {"id": "b", "cisi": "C-2", "site": "A", "direction": "L/R",
+         "complete": True, "symbols": ["003", "000"]},
+    ]
+    corpus = tmp_path / "corpus.csv"
+    to_tidy(raw).to_csv(corpus, index=False)
+    external = tmp_path / "external.csv"
+    pd.DataFrame([
+        {"inscription_id": "S1", "cisi_number": "C-1", "sign_sequence": "G1 G2",
+         "site": "A", "object_type": "u", "line_count": 1, "damaged": False,
+         "reading_direction": "R-L", "motif": "u"},
+        {"inscription_id": "S2", "cisi_number": "C-2", "sign_sequence": "G3",
+         "site": "A", "object_type": "u", "line_count": 1, "damaged": False,
+         "reading_direction": "R-L", "motif": "u"},
+    ]).to_csv(external, index=False)
+    mayig = tmp_path / "mayig.csv"
+    pd.DataFrame([
+        {"inscription_id": "M-1A", "sign_sequence": "P1 P2", "site": "s",
+         "object_type": "seal", "line_count": 1, "damaged": False,
+         "reading_direction": "L-R", "motif": "u", "mean_uncertainty": 0.0},
+    ]).to_csv(mayig, index=False)
+    output = tmp_path / "results"
+    summary = runner.main([
+        "--corpus", str(corpus), "--external", str(external),
+        "--mayig", str(mayig), "--output", str(output),
+    ])
+    saved = json.loads((output / "audit_summary.json").read_text(encoding="utf-8"))
+    assert saved == summary
+    assert summary["family"]["n_compared"] == 2
+    assert summary["family"]["exact_agreement"] == 0.5
+    assert summary["family"]["mismatch_relations"] == {"exact": 1, "gap_placement_only": 1}
+    assert summary["mayig"]["matched_inscriptions"] == 0
+    report = (output / "audit_report.txt").read_text(encoding="utf-8")
+    assert "Cross-corpus audit" in report
 
 
 def test_transition_probabilities_include_unplotted_destinations():
