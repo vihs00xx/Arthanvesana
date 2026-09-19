@@ -3,7 +3,7 @@
 **AI-assisted structural analysis of the Sindhu-Sarasvatī script using statistical baselines, sign embeddings, and self-supervised learning.**
 
 
-Inspired by the Sanskrit idea of searching and inquiry, **Arthanvesana** ("search for meaning") reflects this project's purpose: to investigate ancient signs through evidence, uncover structural patterns, and generate testable hypotheses.
+Inspired by the Sanskrit idea of searching and inquiry, **Arthānveṣaṇa** ("search for meaning") reflects this project's purpose: to investigate ancient signs through evidence, uncover structural patterns, and generate testable hypotheses.
 
 ## Status
 
