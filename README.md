@@ -7,7 +7,7 @@ Inspired by the Sanskrit idea of searching and inquiry, **Arthānveṣaṇa** ("
 
 ## Status
 
-Corpus ingestion and validation, statistical baselines with shuffled controls, grouped evaluation, and sign embeddings (PPMI/SVD, skip-gram), clustering, and visualization are implemented.
+Corpus ingestion and validation, statistical baselines with shuffled controls, grouped evaluation, PPMI/SVD and skip-gram sign embeddings, clustering with permutation-null checks, PCA/UMAP visualization, and a masked-sign transformer are implemented. A metadata sidecar, motif-stratified evaluation, and a cross-corpus transcription audit are also included.
 
 ## Source corpus
 
@@ -48,6 +48,14 @@ The runner also holds out each site with at least 100 eligible inscriptions, rem
 ## Sign embeddings
 
 Run `python scripts/run_embeddings.py --repeats 10` to train PPMI/SVD and skip-gram sign vectors and compare embedding-based restoration against the bigram on identical grouped splits and masked positions. The runner also clusters both vector sets (k-means sweep plus hierarchical), tests cluster alignment with positional roles against a permutation null, and writes PCA/UMAP figures colored by role. Local `outputs/embeddings/` files contain a text report and JSON with the config sweeps, per-run metrics, paired differences, stability checks, cluster assignments, and full-data neighborhoods. Reported standard deviations describe split variability, not confidence intervals.
+
+## Masked-sign transformer
+
+Run `python scripts/run_transformer.py --repeats 10` to train a tiny transformer encoder (1–2 layers, dim 32–64) with a mask-one-sign objective and compare it against the bigram on identical grouped splits and masked positions. Training uses early stopping on a grouped validation split; parameter counts and epochs are reported alongside accuracy. Requires torch (CPU wheel, see `requirements.txt`). Local `outputs/transformer/` files contain a text report and JSON with the config selection, per-run metrics, paired differences, and training diagnostics. Reported standard deviations describe split variability, not confidence intervals.
+
+## Data enrichment and audit
+
+Run `python scripts/build_metadata.py` to join external motif and direction fields (HuggingFace `joyboseroy/indus_decipher`, gitignored under `data/external/`) into `data/processed/inscription_metadata.csv`, keyed by CISI number. Run `python scripts/run_stratified.py` for motif-stratified restoration and a direction cross-check, and `python scripts/run_audit.py` for the cross-corpus transcription audit (same-family agreement plus an independent length-level check against the mayig CISI transcription). Local `outputs/stratified/` and `outputs/audit/` hold the reports. See `data/PROVENANCE.md` for sources and limitations.
 
 ## License
 
