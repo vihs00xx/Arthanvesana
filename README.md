@@ -7,7 +7,7 @@ Inspired by the Sanskrit idea of searching and inquiry, **Arthanvesana** ("searc
 
 ## Status
 
-Corpus ingestion and validation, statistical baselines with shuffled controls, and grouped evaluation are implemented. Sign embeddings (PPMI/SVD, skip-gram), clustering, and visualization are planned.
+Corpus ingestion and validation, statistical baselines with shuffled controls, grouped evaluation, and sign embeddings (PPMI/SVD, skip-gram), clustering, and visualization are implemented.
 
 ## Source corpus
 
@@ -44,6 +44,10 @@ Type checking currently covers five statistical core modules. Run `python script
 Run `python scripts/run_robustness.py --repeats 10` to compare the context model with training-only frequency and observed-position baselines. The same artifact/duplicate-grouped partitions are evaluated as readable spans, complete inscriptions, unique sequences, and complete unique sequences. Each model predicts the same masked positions; unseen target signs count as failures.
 
 The runner also holds out each site with at least 100 eligible inscriptions, removing linked artifacts and duplicate groups from training. Local `outputs/robustness/` files contain a text report and JSON with all split identities, paired differences, overlap checks, source/data hashes, and dependency versions. Reported standard deviations describe split variability, not confidence intervals over independent experiments. Use `--help` for input, output, seed, split-fraction, and site-threshold options.
+
+## Sign embeddings
+
+Run `python scripts/run_embeddings.py --repeats 10` to train PPMI/SVD and skip-gram sign vectors and compare embedding-based restoration against the bigram on identical grouped splits and masked positions. The runner also clusters both vector sets (k-means sweep plus hierarchical), tests cluster alignment with positional roles against a permutation null, and writes PCA/UMAP figures colored by role. Local `outputs/embeddings/` files contain a text report and JSON with the config sweeps, per-run metrics, paired differences, stability checks, cluster assignments, and full-data neighborhoods. Reported standard deviations describe split variability, not confidence intervals.
 
 ## License
 
