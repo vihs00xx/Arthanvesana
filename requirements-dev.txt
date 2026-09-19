@@ -1,3 +1,4 @@
-ruff>=0.15,<0.16
-mypy>=1.19,<2
-pytest>=9.1,<10
+# Pinned dev toolchain (matches pyproject [project.optional-dependencies].dev bounds).
+ruff==0.15.22
+mypy==1.20.2
+pytest==9.1.1

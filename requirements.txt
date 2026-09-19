@@ -1,13 +1,16 @@
-numpy
-pandas
-scipy
-scikit-learn
-matplotlib
-seaborn
-gensim
-morfessor
-umap-learn
-networkx
-jupyter
-pytest
-tqdm
+# Pinned to the environment used to generate the committed outputs (Python 3.13).
+# Bump deliberately and regenerate outputs when upgrading.
+numpy==2.5.3
+pandas==3.0.5
+scipy==1.18.1
+scikit-learn==1.9.1
+matplotlib==3.11.2
+seaborn==0.13.2
+gensim==4.4.0
+morfessor==2.0.6
+umap-learn==0.5.12
+networkx==3.6.1
+jupyter==1.1.1
+pytest==9.1.1
+tqdm==4.70.1
+# torch (CPU wheel, 2.14.0+cpu): .venv\Scripts\python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.14.0
