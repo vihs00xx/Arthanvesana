@@ -10,6 +10,7 @@ dist/
 .ipynb_checkpoints/
 
 data/raw/
+data/external/
 data/interim/
 outputs/
 
