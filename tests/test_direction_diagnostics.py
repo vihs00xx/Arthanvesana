@@ -57,9 +57,12 @@ def test_boundary_positions_are_not_reversal_invariant():
     )
     probes = {row["orientation"]: row for row in probe["probe"]}
     assert "original" in probes and "reversed" in probes
-    # The interior stays equal; the first-position value need not (start uses
-    # the <S> distribution, the end does not).
+    # The interior stays equal (exact mirror symmetry); first/last positions
+    # need not match because the start uses the <S> distribution while the end
+    # gets a uniform no-evidence backward term.
     assert probes["original"]["interior_top_1"] == probes["reversed"]["interior_top_1"]
+    assert probes["reversed"]["first_position_top_1"] is not None
+    assert probes["original"]["last_position_top_1"] is not None
 
 
 def test_forward_and_reverse_use_same_transition_matrix():
@@ -68,6 +71,7 @@ def test_forward_and_reverse_use_same_transition_matrix():
     model = NGramModel(seqs, 2, method="wittenbell")
     assert model.dist(("001",))["002"] > 0
     assert model.dist(("002",))["001"] > 0
+
 
 
 def test_direction_diagnostics_runner(tmp_path):
