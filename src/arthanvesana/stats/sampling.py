@@ -75,19 +75,16 @@ def _record_keys(record: dict) -> dict:
     }
 
 
-def split_records(
-    records: list[dict], train_frac: float = 0.8, seed: int = 0,
-    *, track: str = "record", group_duplicates: bool | None = None,
-    group_keys: list | None = None,
-) -> tuple[list[dict], list[dict], dict]:
-    if track not in {"record", "sequence", "artifact", "site"}:
-        raise ValueError("track must be record, sequence, artifact, or site")
-    if not 0 <= train_frac <= 1:
-        raise ValueError("train_frac must be between 0 and 1")
-    if group_keys is not None and len(group_keys) != len(records):
-        raise ValueError("group_keys must have one key per record")
-    if group_duplicates is None:
-        group_duplicates = track in {"sequence", "artifact"}
+def _assign_groups(
+    records: list[dict], track: str, group_duplicates: bool, group_keys: list | None
+) -> tuple[list[list[int]], list[dict], dict]:
+    """Shared union-find grouping used by split_records and connected_groups.
+
+    Returns (groups, keys, group_ids) where groups is the deterministically
+    ordered list of record-index lists and group_ids maps each record index to
+    its stable component label (the minimum record identity in the component).
+    This is the single source of artifact/inscription/duplicate grouping.
+    """
     keys = [_record_keys(r) for r in records]
     parent = list(range(len(records)))
 
@@ -127,9 +124,55 @@ def split_records(
         label = min(keys[i]["record"] for i in indices)
         for i in indices:
             group_ids[i] = label
+    return groups, keys, group_ids
+
+
+def connected_groups(
+    records: list[dict], *, track: str = "artifact", group_duplicates: bool | None = None,
+    group_keys: list | None = None,
+) -> list[dict]:
+    """Expose the connected components used for grouped splits, with stable ids.
+
+    Uses the exact grouping code path as split_records, so audit/inference code
+    does not reimplement grouping. Each component gets a deterministic id (the
+    minimum record identity among its members). Every record belongs to exactly
+    one component.
+    """
+    if track not in {"record", "sequence", "artifact", "site"}:
+        raise ValueError("track must be record, sequence, artifact, or site")
+    if group_keys is not None and len(group_keys) != len(records):
+        raise ValueError("group_keys must have one key per record")
+    if group_duplicates is None:
+        group_duplicates = track in {"sequence", "artifact"}
+    groups, _, group_ids = _assign_groups(records, track, group_duplicates, group_keys)
+    return [
+        {"group_id": group_ids[indices[0]], "indices": tuple(indices)}
+        for indices in groups
+    ]
+
+
+def split_records(
+    records: list[dict], train_frac: float = 0.8, seed: int = 0,
+    *, track: str = "record", group_duplicates: bool | None = None,
+    group_keys: list | None = None,
+) -> tuple[list[dict], list[dict], dict]:
+    if track not in {"record", "sequence", "artifact", "site"}:
+        raise ValueError("track must be record, sequence, artifact, or site")
+    if not 0 <= train_frac <= 1:
+        raise ValueError("train_frac must be between 0 and 1")
+    if group_keys is not None and len(group_keys) != len(records):
+        raise ValueError("group_keys must have one key per record")
+    if group_duplicates is None:
+        group_duplicates = track in {"sequence", "artifact"}
+    groups, keys, group_ids = _assign_groups(records, track, group_duplicates, group_keys)
     random.Random(seed).shuffle(groups)
     cut = int(len(groups) * train_frac)
     train_indices = {i for indices in groups[:cut] for i in indices}
+
+    def order_key(i):
+        return (keys[i]["record"], records[i].get("span_index", 0),
+                records[i].get("span_start", 0), keys[i]["sequence"])
+
     ordered = sorted(range(len(records)), key=order_key)
     train = [dict(records[i], split_group=group_ids[i]) for i in ordered if i in train_indices]
     test = [dict(records[i], split_group=group_ids[i]) for i in ordered if i not in train_indices]
