@@ -47,7 +47,7 @@ def test_sensitivity_runner_writes_reproducible_report(tmp_path):
     cells = saved["cells"]
     assert len(cells) == 8
     factor_keys = {
-        (c["factors"]["transcription"], c["factors"]["direction"], c["factors"]["completeness"])
+        (c["factors"]["sequence_order"], c["factors"]["direction"], c["factors"]["completeness"])
         for c in cells
     }
     assert len(factor_keys) == 8
@@ -74,11 +74,13 @@ def test_sensitivity_runner_writes_reproducible_report(tmp_path):
 
     # Direction and completeness factors actually change the record counts.
     counts = {cell["label"]: cell["n_records"] for cell in cells}
-    assert counts["normalized | known | all"] == 14
-    assert counts["normalized | any | all"] == 16
-    assert counts["normalized | known | complete-only"] == 7
+    assert counts["reading_order_normalized | known | all"] == 14
+    assert counts["reading_order_normalized | any | all"] == 16
+    assert counts["reading_order_normalized | known | complete-only"] == 7
 
     report = (output / "sensitivity_report.txt").read_text(encoding="utf-8")
     assert "SD describes split variability, NOT confidence intervals." in report
     assert "not verified archaeological restorations" in report
     assert "headline claim" in report
+    assert "does NOT compare independent transcription traditions" in report
+    assert "sequence-order processing" in report

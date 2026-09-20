@@ -57,6 +57,14 @@ Run `python scripts/run_transformer.py --repeats 10` to train a tiny transformer
 
 Run `python scripts/build_metadata.py` to join external motif and direction fields (HuggingFace `joyboseroy/indus_decipher`, gitignored under `data/external/`) into `data/processed/inscription_metadata.csv`, keyed by CISI number. Run `python scripts/run_stratified.py` for motif-stratified restoration and a direction cross-check, and `python scripts/run_audit.py` for the cross-corpus transcription audit (same-family agreement plus an independent length-level check against the mayig CISI transcription). Local `outputs/stratified/` and `outputs/audit/` hold the reports. See `data/PROVENANCE.md` for sources and limitations.
 
+## Group audit, sequence-order sensitivity, and grouped n-gram inference
+
+Run `python scripts/run_group_audit.py` to audit the connected artifact/inscription/duplicate components used by every grouped split. It reports component-size percentiles, the largest components and which identity relation created them, and warns when any component exceeds one fold's target size. Exact-sequence connectivity merges many records into large components, which is why grouped test sets vary in size; grouping is deliberately not weakened to balance folds.
+
+Run `python scripts/run_sensitivity.py --repeats 10` for the 2×2×2 preprocessing matrix covering **sequence-order processing** (`reading_order_normalized` vs `physical_as_stored`), **direction inclusion**, and **completeness filtering**. This is not a comparison of independent transcription traditions; both sequence-order levels order the *same* transcription.
+
+Run `python scripts/run_ngram_inference.py` for grouped cross-fitted bigram-vs-trigram log-loss inference: connected components are indivisible groups assigned to five folds, every record gets exactly one out-of-fold prediction, token differences are aggregated within each group before inference, and the primary estimand is the macro group-level effect with a group-level sign-flip randomization p-value `(exceedances+1)/(permutations+1)` (never 0) and a cluster-bootstrap interval. The earlier token-level pooled p-value is removed.
+
 ## License
 
 Apache 2.0

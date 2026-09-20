@@ -23,15 +23,18 @@ from arthanvesana.replicate.robustness import (
 from arthanvesana.stats.sampling import split_records
 
 # Sensitivity matrix: 3 binary preprocessing factors = 8 cells.
-#   transcription: "normalized" (reading_order=True) vs "as-stored" (False)
-#   direction:     "known" (known_direction_only=True) vs "any" (False)
-#   completeness:  "all" spans vs "complete-only" (complete inscription with
+#   sequence_order: "reading_order_normalized" (reading_order=True) vs
+#                   "physical_as_stored" (False)
+#   direction:      "known" (known_direction_only=True) vs "any" (False)
+#   completeness:   "all" spans vs "complete-only" (complete inscription with
 #                  fully observed start and end), filtered after analysis_records
 # gap_policy="split" throughout, matching the headline evaluation.
+# NOTE: sequence_order is a sequence-order processing choice, NOT a comparison
+# of independent transcription traditions.
 MATRIX = [
-    {"transcription": transcription, "direction": direction,
+    {"sequence_order": sequence_order, "direction": direction,
      "completeness": completeness}
-    for transcription in ("normalized", "as-stored")
+    for sequence_order in ("reading_order_normalized", "physical_as_stored")
     for direction in ("known", "any")
     for completeness in ("all", "complete-only")
 ]
@@ -44,7 +47,7 @@ COMPLETENESS_POLICY = (
 
 def cell_label(factors):
     return (
-        f"{factors['transcription']} | {factors['direction']} | "
+        f"{factors['sequence_order']} | {factors['direction']} | "
         f"{factors['completeness']}"
     )
 
@@ -53,7 +56,7 @@ def cell_records(frame, factors):
     records = analysis_records(
         frame,
         gap_policy="split",
-        reading_order=factors["transcription"] == "normalized",
+        reading_order=factors["sequence_order"] == "reading_order_normalized",
         known_direction_only=factors["direction"] == "known",
     )
     if factors["completeness"] == "complete-only":
@@ -118,10 +121,13 @@ def render_report(summary):
         "Sensitivity-matrix evaluation of the restoration result",
         "",
         "The headline comparison (context bigram vs frequency and position",
-        "baselines) is rerun under each cell of a 2x2x2 preprocessing matrix:",
-        "  transcription: normalized (reading order) vs as-stored",
-        "  direction: known (L/R, R/L only) vs any (includes OTHER)",
-        f"  completeness: {COMPLETENESS_POLICY}",
+        "baselines) is rerun under each cell of a 2x2x2 preprocessing matrix",
+        "covering exactly three things:",
+        "  1. sequence-order processing: reading_order_normalized vs physical_as_stored",
+        "  2. direction inclusion: known (L/R, R/L only) vs any (includes OTHER)",
+        f"  3. completeness filtering: {COMPLETENESS_POLICY}",
+        "This matrix does NOT compare independent transcription traditions; the",
+        "two sequence-order levels are two ways of ordering the SAME transcription.",
         "gap_policy=split throughout; artifact-grouped seeded splits;",
         "OOV targets count as failures; candidates come only from training data.",
         f"Grouping/deduplication: {DEDUP_POLICY}",
@@ -129,7 +135,7 @@ def render_report(summary):
         "SD describes split variability, NOT confidence intervals.",
         "These are artificial single-sign masks, not verified archaeological restorations.",
         "",
-        "Cell (transcription | direction | completeness) | Spans | Mean test spans | "
+        "Cell (sequence_order | direction | completeness) | Spans | Mean test spans | "
         "Context top-1 | Frequency top-1 | Position top-1 | "
         "Context-frequency top-1 | Context-position top-1",
     ]
