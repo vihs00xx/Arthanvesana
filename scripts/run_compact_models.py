@@ -39,6 +39,8 @@ def main(argv=None):
                         default=ROOT / "outputs" / "compact_models")
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--max-hmm-sequences", type=int, default=600,
+                        help="documented cap on HMM training sequences (EM cost)")
     args = parser.parse_args(argv)
 
     frame = pd.read_csv(args.corpus, encoding="utf-8", dtype={"sign_code": str})
@@ -49,7 +51,8 @@ def main(argv=None):
     runs = []
     for seed in seeds:
         result = crossfit_compact(
-            seqs, n_folds=5, seed=seed, state_counts=DEFAULT_STATE_COUNTS
+            seqs, n_folds=5, seed=seed, state_counts=DEFAULT_STATE_COUNTS,
+            max_hmm_sequences=args.max_hmm_sequences,
         )
         runs.append({"seed": seed, **result})
 
@@ -90,6 +93,7 @@ def main(argv=None):
             "state_counts": list(DEFAULT_STATE_COUNTS),
             "design": ("grouped outer folds; HMM state count selected on an inner "
                        "split of each outer TRAIN partition"),
+            "hmm_training_cap": args.max_hmm_sequences,
             "oov_policy": "unseen signs take a uniform-sign penalty of log2(V) bits",
         },
         "runs": runs,
@@ -110,6 +114,9 @@ def main(argv=None):
         "full outer train before the single outer-test scoring. Unseen signs take a",
         "uniform-sign penalty of log2(V) bits. SD describes split variability, NOT",
         "confidence intervals.",
+        f"HMM training is capped at {args.max_hmm_sequences} sequences (documented",
+        "tractability limit; the bigram and relative-position models use the full",
+        "outer training partition).",
         "",
         "Model | bits/token mean +/- SD | perplexity | parameters",
     ]

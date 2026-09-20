@@ -107,7 +107,7 @@ def _token_logloss(logprob_fn, seqs, fallback_bits):
 
 
 def crossfit_compact(seqs, n_folds=5, seed=0, state_counts=(2, 3, 4, 5),
-                     inner_frac=0.2):
+                     inner_frac=0.2, max_hmm_sequences=600, hmm_iter=6):
     """Grouped nested cross-validation of compact models vs the bigram.
 
     For every outer fold: an inner split of the outer TRAIN partition selects the
@@ -115,6 +115,12 @@ def crossfit_compact(seqs, n_folds=5, seed=0, state_counts=(2, 3, 4, 5),
     refit on the full outer train; all models are then scored once on the outer
     test tokens. Returns per-model mean held-out bits/token plus perplexity,
     parameter counts, and the selected state counts.
+
+    ``max_hmm_sequences`` caps the number of training sequences used for
+    Baum-Welch (a documented tractability limit; EM is O(iterations x
+    sequences) with Python-level per-sequence passes). The cap is applied
+    deterministically after a seeded shuffle, and the bigram and
+    relative-position models still use the full outer training partition.
     """
     records = records_from_seqs(seqs)
     groups = connected_groups(records, track="artifact", group_duplicates=True)
@@ -163,15 +169,17 @@ def crossfit_compact(seqs, n_folds=5, seed=0, state_counts=(2, 3, 4, 5),
         acc["relative_position"][1] += ntok
         relpos_params = relpos_stats["n_parameters"]
         # --- HMM: nested state-count selection on an inner split of train
-        inner_fit, inner_valid = _inner_split(train, seed + f, inner_frac)
+        hmm_train = _capped(train, max_hmm_sequences, seed + f)
+        inner_fit, inner_valid = _inner_split(hmm_train, seed + f, inner_frac)
         best_states, best_loss = state_counts[0], None
         for k in state_counts:
-            model = DiscreteHMM(n_states=k, n_iter=10, seed=seed + f).fit(inner_fit)
+            model = DiscreteHMM(n_states=k, n_iter=hmm_iter, seed=seed + f).fit(inner_fit)
             loss, _ = _token_logloss(model.logprob, inner_valid, fallback_bits)
             if loss is not None and (best_loss is None or loss < best_loss):
                 best_states, best_loss = k, loss
         selected_states.append(best_states)
-        hmm = DiscreteHMM(n_states=best_states, n_iter=15, seed=seed + f).fit(train)
+        hmm = DiscreteHMM(n_states=best_states, n_iter=hmm_iter * 2,
+                          seed=seed + f).fit(hmm_train)
         loss, ntok = _token_logloss(hmm.logprob, test, fallback_bits)
         acc["hmm"][0] += loss * ntok
         acc["hmm"][1] += ntok
@@ -203,6 +211,16 @@ def _inner_split(train, seed, frac):
     _random.Random(seed).shuffle(order)
     cut = max(1, int(len(order) * (1 - frac)))
     return order[:cut], order[cut:] or order[:1]
+
+
+def _capped(seqs, cap, seed):
+    """Deterministic cap on training sequences for the HMM (documented limit)."""
+    if cap is None or len(seqs) <= cap:
+        return list(seqs)
+    import random as _random
+    order = list(seqs)
+    _random.Random(seed).shuffle(order)
+    return order[:cap]
 
 
 class DiscreteHMM:
