@@ -135,17 +135,19 @@ def _boundary_probe(train, test, train_rev, test_rev):
             records, _ = restoration_records(tr, te, mask_length=1)
         except ValueError:
             continue
+        is_last = [row["position"] == row["length"] - 1 and row["length"] > 1
+                   for row in records]
+        last_positions = {row["position"] for row, last in zip(records, is_last) if last}
         interior = [(row["position"], row["rank"]) for row in records
                     if 0 < row["position"] < row["length"] - 1]
         first = [(row["position"], row["rank"]) for row in records
                  if row["position"] == 0]
-        last = [(row["position"], row["rank"]) for row in records
-                if row["position"] == row["length"] - 1 and row["length"] > 1]
+        last = [(row["position"], row["rank"]) for row, is_l in zip(records, is_last) if is_l]
         rows.append({
             "orientation": label,
             "interior_top_1": _edge_top1(interior, {1}),
             "first_position_top_1": _edge_top1(first, {0}),
-            "last_position_top_1": _edge_top1(last, {0}),
+            "last_position_top_1": _edge_top1(last, last_positions),
         })
     return {"probe": rows}
 
