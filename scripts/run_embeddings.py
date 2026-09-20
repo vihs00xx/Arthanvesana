@@ -155,31 +155,25 @@ def render_report(summary):
         "Restoration scores candidates by reconstructed association with the",
         "observed in-window neighbors. Same artifact-grouped splits,",
         "same masked positions, and OOV-as-failure scoring as the bigram.",
+        "Configuration selection is fully nested per outer split: the window/dim",
+        "sweep runs on an inner validation split carved from the outer TRAIN only,",
+        "and the selected setting is refit on the full outer train before testing.",
         "SD describes split variability, NOT confidence intervals.",
         "",
-        "PPMI config sweep on seed 0 (validation top-1; grouped split",
-        "carved from training, test untouched during selection):",
+        "Per-outer-split nested selection (config chosen on inner validation carved",
+        "from the outer TRAIN only, then refit on the full outer train):",
     ]
-    for row in summary["config_sweep"]:
+    for run in summary["runs"]:
+        p = run["selected_ppmi"]
+        s = run["selected_skipgram"]
         lines.append(
-            f"window {row['window']}, dim {row['dim']}: "
-            f"ppmi {row['embedding_top1']:.4f} vs bigram {row['bigram_top1']:.4f}"
-        )
-    lines.append(
-        "Skip-gram config sweep on seed 0 (validation top-1; grouped split "
-        "carved from training, test untouched during selection):"
-    )
-    for row in summary["skipgram_sweep"]:
-        lines.append(
-            f"window {row['window']}, dim {row['dim']}: "
-            f"skipgram {row['embedding_top1']:.4f} vs bigram {row['bigram_top1']:.4f}"
+            f"seed {run['seed']}: ppmi w{p['window']} d{p['dim']} "
+            f"(valid {p['valid_top1']:.4f}); skipgram w{s['window']} d{s['dim']} "
+            f"(valid {s['valid_top1']:.4f})"
         )
     lines.extend([
-        f"Selected PPMI: window {summary['best_config']['window']}, "
-        f"dim {summary['best_config']['dim']}; selected skip-gram: window "
-        f"{summary['skipgram_best']['window']}, dim {summary['skipgram_best']['dim']}.",
         "",
-        f"10-seed comparison ({summary['n_ok']}/{summary['n_runs']} successful runs):",
+        f"{summary['n_ok']}-seed comparison (nested selection):",
         "Model | Top-1 mean +/- SD | Top-5 mean | Top-10 mean | MRR mean",
     ])
     for model in MODELS:
@@ -239,33 +233,6 @@ def main(argv=None):
     records = analysis_records(frame, gap_policy="split", known_direction_only=True)
 
     seeds = list(range(args.seed, args.seed + args.repeats))
-    train0, _, _ = split_records(records, 0.8, seeds[0], track="artifact", group_duplicates=True)
-    fit0, valid0 = _fit_valid_split(train0, seeds[0])
-    bigram0 = [r["rank"] for r in restoration_records(fit0, valid0, mask_length=1)[0]]
-    sweep = []
-    for window in WINDOWS:
-        for dim in DIMS:
-            emb = embedding_restoration_ranks(fit0, valid0, window, dim)
-            assert len(emb) == len(bigram0)
-            sweep.append({
-                "window": window, "dim": dim,
-                "embedding_top1": _metrics(emb)["top_1"],
-                "bigram_top1": _metrics(bigram0)["top_1"],
-            })
-    best = max(sweep, key=lambda r: r["embedding_top1"])
-    window, dim = best["window"], best["dim"]
-    sg_sweep = []
-    for sg_window in SG_WINDOWS:
-        for sg_dim in SG_DIMS:
-            ranks = skipgram_restoration_ranks(fit0, valid0, sg_window, sg_dim, args.seed)
-            assert len(ranks) == len(bigram0)
-            sg_sweep.append({
-                "window": sg_window, "dim": sg_dim,
-                "embedding_top1": _metrics(ranks)["top_1"],
-                "bigram_top1": _metrics(bigram0)["top_1"],
-            })
-    sg_best = max(sg_sweep, key=lambda r: r["embedding_top1"])
-    sg_window, sg_dim = sg_best["window"], sg_best["dim"]
 
     runs = []
     for seed in seeds:
@@ -273,12 +240,42 @@ def main(argv=None):
             records, 0.8, seed, track="artifact", group_duplicates=True
         )
         bigram = [r["rank"] for r in restoration_records(train, test, mask_length=1)[0]]
+        # Nested selection: carve an inner fit/valid split from the OUTER TRAIN only.
+        fit, valid = _fit_valid_split(train, seed)
+        ppmi_sweep = []
+        for window in WINDOWS:
+            for dim in DIMS:
+                ranks = embedding_restoration_ranks(fit, valid, window, dim)
+                ppmi_sweep.append({
+                    "window": window, "dim": dim,
+                    "valid_top1": _metrics(ranks)["top_1"],
+                })
+        ppmi_best = max(ppmi_sweep, key=lambda r: r["valid_top1"])
+        window, dim = ppmi_best["window"], ppmi_best["dim"]
+        sg_sweep = []
+        for sg_w in SG_WINDOWS:
+            for sg_d in SG_DIMS:
+                ranks = skipgram_restoration_ranks(fit, valid, sg_w, sg_d, seed)
+                sg_sweep.append({
+                    "window": sg_w, "dim": sg_d,
+                    "valid_top1": _metrics(ranks)["top_1"],
+                })
+        sg_best = max(sg_sweep, key=lambda r: r["valid_top1"])
+        sg_window, sg_dim = sg_best["window"], sg_best["dim"]
+        # Refit selected settings on the FULL outer train, evaluate once on test.
         ppmi = embedding_restoration_ranks(train, test, window, dim)
         skipgram = skipgram_restoration_ranks(train, test, sg_window, sg_dim, seed)
+        assert len(ppmi) == len(bigram) == len(skipgram)
         runs.append({
             "seed": seed, "split": diagnostics,
             "train_ids": sorted({r["inscription_id"] for r in train}),
             "test_ids": sorted({r["inscription_id"] for r in test}),
+            "inner_ppmi_sweep": ppmi_sweep,
+            "inner_skipgram_sweep": sg_sweep,
+            "selected_ppmi": {"window": window, "dim": dim,
+                              "valid_top1": ppmi_best["valid_top1"]},
+            "selected_skipgram": {"window": sg_window, "dim": sg_dim,
+                                  "valid_top1": sg_best["valid_top1"]},
             "bigram": _metrics(bigram), "ppmi": _metrics(ppmi),
             "skipgram": _metrics(skipgram),
             "paired_ppmi": _paired(ppmi, bigram),
@@ -383,11 +380,8 @@ def main(argv=None):
             "config_grid": {"windows": list(WINDOWS), "dims": list(DIMS)},
             "skipgram_grid": {"windows": list(SG_WINDOWS), "dims": list(SG_DIMS)},
             "k_range": K_RANGE,
+            "selection": "fully nested per outer split (inner grouped fit/valid on outer train only)",
         },
-        "config_sweep": sweep,
-        "best_config": {"window": window, "dim": dim},
-        "skipgram_sweep": sg_sweep,
-        "skipgram_best": {"window": sg_window, "dim": sg_dim},
         "n_runs": len(runs), "n_ok": len(runs),
         "runs": runs, "aggregate": aggregate,
         "stability": {

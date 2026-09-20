@@ -49,7 +49,7 @@ def test_robustness_runner_writes_reproducible_report(tmp_path):
     assert "context_vs_position" in report
 
 
-def test_transformer_runner_writes_reproducible_report(tmp_path):
+def test_transformer_runner_writes_reproducible_report(tmp_path, monkeypatch):
     torch = pytest.importorskip("torch")
     assert torch is not None
     runner = load_runner("run_transformer")
@@ -71,11 +71,57 @@ def test_transformer_runner_writes_reproducible_report(tmp_path):
     saved = json.loads((output / "transformer_summary.json").read_text(encoding="utf-8"))
     assert saved == summary
     assert saved["n_ok"] == 1
-    assert len(saved["config_selection"]) == len(runner.GRID)
-    for run in saved["runs"]:
-        assert run["transformer"]["n_masked"] == run["bigram"]["n_masked"]
+    assert len(saved["per_seed"]) == 1
+    run = saved["per_seed"][0]
+    assert len(run["inner"]) == len(runner.GRID)
+    assert run["selected_config"] in runner.GRID
+    assert 1 <= run["selected_epochs"] <= 2
+    assert run["transformer"]["n_masked"] == run["bigram"]["n_masked"]
+    assert run["fit_vocab_size"] > 0
     report = (output / "transformer_report.txt").read_text(encoding="utf-8")
     assert "NOT confidence intervals" in report
+    assert "nested" in report.lower()
+
+
+def test_transformer_inner_selection_never_sees_outer_test(tmp_path, monkeypatch):
+    torch = pytest.importorskip("torch")
+    assert torch is not None
+    runner = load_runner("run_transformer")
+    raw = [
+        {
+            "id": str(i), "cisi": str(i), "site": "A" if i < 6 else "B",
+            "direction": "L/R", "complete": True,
+            "symbols": [f"{100 + (i % 4):03d}", "001", f"{200 + (i % 3):03d}"],
+        }
+        for i in range(16)
+    ]
+    corpus = tmp_path / "corpus.csv"
+    to_tidy(raw).to_csv(corpus, index=False)
+    seen = []
+    original = runner._fit_valid_split
+
+    def recording_split(train, seed):
+        fit, valid = original(train, seed)
+        seen.append((
+            {r["inscription_id"] for r in fit},
+            {r["inscription_id"] for r in valid},
+        ))
+        return fit, valid
+
+    monkeypatch.setattr(runner, "_fit_valid_split", recording_split)
+    output = tmp_path / "results"
+    summary = runner.main([
+        "--corpus", str(corpus), "--output", str(output),
+        "--repeats", "1", "--max-epochs", "2", "--patience", "2",
+    ])
+    run = summary["per_seed"][0]
+    test_ids = set(run["test_ids"])
+    train_ids = set(run["train_ids"])
+    assert seen
+    for fit_ids, valid_ids in seen:
+        assert fit_ids | valid_ids == train_ids
+        assert not (fit_ids & test_ids)
+        assert not (valid_ids & test_ids)
 
 
 def test_stratified_runner_writes_reproducible_report(tmp_path):

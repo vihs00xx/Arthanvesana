@@ -182,11 +182,16 @@ def test_embeddings_runner_writes_reproducible_report(tmp_path):
     saved = json.loads((output / "embeddings_summary.json").read_text(encoding="utf-8"))
     assert saved == summary
     assert saved["manifest"]["seeds"] == [0, 1]
-    assert len(saved["config_sweep"]) == 6
     assert saved["n_ok"] == 2
+    assert len(saved["runs"]) == 2
     for run in saved["runs"]:
         assert run["bigram"]["n_masked"] == run["ppmi"]["n_masked"] == run["skipgram"]["n_masked"]
+        assert len(run["inner_ppmi_sweep"]) == 6
+        assert len(run["inner_skipgram_sweep"]) == 4
+        assert run["selected_ppmi"]["window"] in (1, 2)
+        assert run["selected_skipgram"]["window"] in (1, 2)
     assert saved["clustering"]["ppmi"]["best_k"] >= 2
     assert (output / "figures" / "umap_ppmi.png").exists()
     report = (output / "embeddings_report.txt").read_text(encoding="utf-8")
     assert "NOT confidence intervals" in report
+    assert "nested" in report.lower()
