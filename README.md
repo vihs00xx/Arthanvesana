@@ -37,7 +37,7 @@ python -m ruff check .
 python -m mypy
 ```
 
-Type checking currently covers five statistical core modules. Run `python scripts/run_stats.py`, `python scripts/run_replication.py`, and `python scripts/run_upgrade.py` to regenerate local reports. Defaults use known-direction, gap-split spans and artifact/duplicate-grouped holdouts; these results are not directly comparable to the earlier record-level splits.
+Type checking currently covers five statistical core modules under `strict` (`src/arthanvesana/stats/entropy.py`, `src/arthanvesana/replicate/llr.py`, `src/arthanvesana/replicate/entropy2.py`, `src/arthanvesana/replicate/metrics.py`, `src/arthanvesana/replicate/segment.py`). The newer `simulate` and `compact` modules import numpy and are only partially annotated; they are not yet under `strict`, and numpy's bundled stubs require Python ≥3.12 to parse while the checked configuration targets 3.11. Full annotation of those modules is outstanding work. Run `python scripts/run_stats.py`, `python scripts/run_replication.py`, and `python scripts/run_upgrade.py` to regenerate local reports. Defaults use known-direction, gap-split spans and artifact/duplicate-grouped holdouts; these results are not directly comparable to the earlier record-level splits.
 
 ## Restoration robustness
 
@@ -64,6 +64,20 @@ Run `python scripts/run_group_audit.py` to audit the connected artifact/inscript
 Run `python scripts/run_sensitivity.py --repeats 10` for the 2×2×2 preprocessing matrix covering **sequence-order processing** (`reading_order_normalized` vs `physical_as_stored`), **direction inclusion**, and **completeness filtering**. This is not a comparison of independent transcription traditions; both sequence-order levels order the *same* transcription.
 
 Run `python scripts/run_ngram_inference.py` for grouped cross-fitted bigram-vs-trigram log-loss inference: connected components are indivisible groups assigned to five folds, every record gets exactly one out-of-fold prediction, token differences are aggregated within each group before inference, and the primary estimand is the macro group-level effect with a group-level sign-flip randomization p-value `(exceedances+1)/(permutations+1)` (never 0) and a cluster-bootstrap interval. The earlier token-level pooled p-value is removed.
+
+## Direction diagnostics
+
+Run `python scripts/run_direction_diagnostics.py --repeats 10` to investigate the ~2.7–3.1 percentage-point advantage of physical as-stored order over reading-order-normalized order. It reports direction-specific evaluation, a global reversal sanity check (interior masks are exactly mirror-symmetric; boundary positions are not, because the span start uses the `<S>` distribution while the end takes a uniform no-evidence term), cross-direction transfer with controlled training sizes, and a stratified breakdown of the gap. Diagnostic only: no pipeline default changes.
+
+## Same-family transcription sensitivity
+
+Run `python scripts/run_transcription_sensitivity.py --repeats 10` to test whether context beats frequency and position under *both* same-family ICIT transcriptions. Records are matched by CISI (one-to-one only, all exclusions reported) and both transcriptions receive identical artifact-level test sets built from stable catalog ids. Agreement between these ICIT-derived sources is **not** independent inter-annotator agreement.
+
+## Power calibration and compact models
+
+Run `python scripts/run_power_analysis.py` to calibrate what the corrected inference can detect at this corpus size. Synthetic corpora matched to empirical properties (inscription count, length distribution, vocabulary, unigram frequencies) are passed through the same grouped cross-fitted pipeline at 0.5×/1×/2× size, with zero-effect scenarios for the false-positive rate and a controlled trigram-effect parameter for power. Use `--replicates 100` for the full grid. The generators are calibration instruments, not models of the Indus production process or of natural language.
+
+Run `python scripts/run_compact_models.py` to compare a smoothed relative-position model and a discrete HMM (2–5 states, state count selected on an inner split of each outer training partition) against the bigram under grouped nested cross-validation, with held-out bits/token and perplexity as the primary metrics. The HMM states are an economical latent-state representation of positional sequence structure; they are not words, phrases, grammatical roles, or semantic classes.
 
 ## License
 
