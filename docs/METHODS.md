@@ -79,11 +79,35 @@ multiple times. The corrected design (`scripts/run_ngram_inference.py`) uses det
 5. **Secondary estimand** (reported as secondary): token-weighted mean, uncertainty by
    resampling whole groups.
 
-Result on this corpus: **macro group effect +0.0279 bits/token, 95% CI [+0.0112, +0.0446],
-randomization p = 0.0016** (2,262 groups, zero fold-leakage). Secondary token-weighted
-+0.0440 bits/token with 95% CI [−0.0177, +0.1187] — **including zero**, because a few very
-large groups dominate token weighting. The corrected effect is roughly half the invalid
-token-level estimate (+0.065).
+Result on this corpus: **macro group effect +0.0279 bits/token, 95% CI [+0.0112, +0.0446]**
+(2,262 groups, zero fold-leakage). Secondary token-weighted +0.0440 bits/token with 95% CI
+[−0.0177, +0.1187] — **including zero**, because a few very large groups dominate token
+weighting. The corrected effect is roughly half the invalid token-level estimate (+0.065).
+
+### 4b. The randomization p-value is NOT usable (false-positive calibration)
+
+The synthetic calibration (`scripts/run_power_analysis.py`) falsified the inferential use of
+the group-level randomization test. Over 32 simulated corpora at 1x size, **every cell —
+including all 16 zero-higher-order-effect corpora — returned the floor p-value 0.001**, and
+under zero higher-order structure the macro effect was systematically **negative**
+(mean −0.0626, range [−0.0917, −0.0246]) rather than centred on zero.
+
+Cause: a modified Kneser-Ney trigram carries more parameters than the bigram, so with no
+genuine higher-order structure it *loses* held-out log loss. The sign-flip test assumes group
+differences are symmetric about zero under the null; because the null is centred near −0.06,
+the test rejects almost always and does not control the false-positive rate.
+
+Consequences, applied throughout this document:
+
+- **Do not cite the randomization p-value (0.0016) as evidence.** It is anti-conservative.
+- The **point estimate remains informative**, but it must be read **against the calibrated
+  null band** instead. Under zero higher-order structure the macro effect lies in
+  **[−0.0917, −0.0246]** (1x size); the observed **+0.0279 sits above that entire band**, which
+  is the defensible basis for a small positive higher-order component.
+- Detection rate is 1.000 in every cell, so it measures "the test always rejects", not power.
+  Redesigning the test (e.g. a null calibrated on the bigram-vs-trigram parameter penalty, or
+  a paired comparison against matched null corpora) is required before any p-value is quoted.
+
 ## 5. Corrected sensitivity terminology and diagnostics
 
 - **Sequence-order, not transcription.** The 2x2x2 sensitivity matrix
@@ -139,11 +163,19 @@ over position, positive in every tested cell and partition convention.
 
 ### Secondary claim, pending corrected inference
 
-A trigram may contain a small amount of predictive information beyond a bigram. The
-group-level cross-fitted interval and randomization test support a small positive macro
-effect (+0.028 bits/token, p = 0.0016); the token-weighted interval includes zero. Promote
-this to a primary claim only if further pre-specified replications (alternative fold seeds,
-corpus variants) keep the group-level interval above zero.
+A trigram may contain a small amount of predictive information beyond a bigram. The evidence
+is **the point estimate against the calibrated null band**, NOT a p-value: the macro group
+effect is +0.028 bits/token with 95% CI [+0.0112, +0.0446], and synthetic calibration places
+the zero-higher-order-effect macro effect in [−0.0917, −0.0246], so the observed value sits
+above the entire null band. The group-level randomization p-value (0.0016) is
+**anti-conservative and is not cited** (see §4b); the token-weighted interval includes zero.
+Do not promote this claim until the test is redesigned and the result replicates on
+alternative fold seeds and corpus variants.
+
+### Null calibration (new)
+
+`scripts/run_power_analysis.py` is now a required part of the evidence chain: no higher-order
+claim may be reported without a matched zero-effect null band from the same pipeline.
 
 ### Negative result
 
