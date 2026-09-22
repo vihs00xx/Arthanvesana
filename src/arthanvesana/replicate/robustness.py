@@ -112,33 +112,66 @@ def _paired_block(ctx_ranks, base_ranks):
     return block
 
 
-def evaluate_split(train_records, test_records):
+def evaluate_split_records(train_records, test_records):
+    """Per-token restoration ranks, grouped by test record.
+
+    Performs exactly the computation :func:`evaluate_split` does — one training
+    pass, one context restoration pass — but returns one row per TEST RECORD
+    instead of aggregate metrics. Callers can therefore aggregate over arbitrary
+    subgroups (transcription agreement classes, sites, length bands) without
+    retraining, which is what makes subgroup reporting affordable.
+
+    Tokens whose target sign is outside the training vocabulary get
+    ``rank_frequency is None`` (an OOV failure); the same target is an OOV
+    failure for every model.
+    """
     train_records = [_normalized_record(record) for record in train_records]
     test_records = [_normalized_record(record) for record in test_records]
     if not train_records:
-        raise ValueError("evaluate_split requires nonempty training records")
+        raise ValueError("evaluate_split_records requires nonempty training records")
     if not any(record["sequence"] for record in test_records):
-        raise ValueError("evaluate_split requires nonempty test tokens")
+        raise ValueError("evaluate_split_records requires nonempty test tokens")
     counts = _global_counts(train_records)
     if not counts:
-        raise ValueError("evaluate_split requires training candidate signs")
+        raise ValueError("evaluate_split_records requires training candidate signs")
     freq_rank = _frequency_rank_map(counts)
     pos_rank = _position_rank_fn(train_records, counts)
     context_rows, _ = restoration_records(train_records, test_records, mask_length=1)
 
-    freq_ranks = []
-    pos_ranks = []
+    rows = []
+    cursor = 0
     for record in test_records:
         seq = record["sequence"]
         length = len(seq)
         start = parse_bool(record.get("start_complete", True))
         end = parse_bool(record.get("end_complete", True))
+        tokens = []
         for pos, sign in enumerate(seq):
-            freq_ranks.append(freq_rank.get(sign))
-            pos_ranks.append(pos_rank((length, pos, start, end)).get(sign))
-    ctx_ranks = [row["rank"] for row in context_rows]
-    if len(ctx_ranks) != len(freq_ranks):
+            context = context_rows[cursor]
+            cursor += 1
+            tokens.append({
+                "position": pos,
+                "target": sign,
+                "rank_frequency": freq_rank.get(sign),
+                "rank_position": pos_rank((length, pos, start, end)).get(sign),
+                "rank_context": context["rank"],
+            })
+        rows.append({"record": record, "tokens": tokens})
+    if cursor != len(context_rows):
         raise ValueError("context evaluation produced misaligned positions")
+    return {
+        "n_train_records": len(train_records),
+        "n_test_records": len(test_records),
+        "candidate_vocab_size": len(counts),
+        "rows": rows,
+    }
+
+
+def evaluate_split(train_records, test_records):
+    per = evaluate_split_records(train_records, test_records)
+    freq_ranks = [t["rank_frequency"] for row in per["rows"] for t in row["tokens"]]
+    pos_ranks = [t["rank_position"] for row in per["rows"] for t in row["tokens"]]
+    ctx_ranks = [t["rank_context"] for row in per["rows"] for t in row["tokens"]]
 
     n_oov = sum(rank is None for rank in freq_ranks)
     models = {
@@ -151,9 +184,9 @@ def evaluate_split(train_records, test_records):
         "context_vs_position": _paired_block(ctx_ranks, pos_ranks),
     }
     return {
-        "n_train_records": len(train_records),
-        "n_test_records": len(test_records),
-        "candidate_vocab_size": len(counts),
+        "n_train_records": per["n_train_records"],
+        "n_test_records": per["n_test_records"],
+        "candidate_vocab_size": per["candidate_vocab_size"],
         "n_masked": len(freq_ranks),
         "n_oov": n_oov,
         "oov_fraction": n_oov / len(freq_ranks) if freq_ranks else 0.0,
