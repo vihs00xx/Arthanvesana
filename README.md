@@ -9,7 +9,7 @@ Inspired by the Sanskrit idea of searching and inquiry, **Arthānveṣaṇa** ("
 
 Corpus ingestion and validation, statistical baselines with shuffled controls, grouped evaluation, PPMI/SVD and skip-gram sign embeddings, clustering with permutation-null checks, PCA/UMAP visualization, and a masked-sign transformer are implemented. A metadata sidecar, motif-stratified evaluation, and a cross-corpus transcription audit are also included.
 
-**Claims status.** The primary supported finding is that immediate context beats frequency and position. The higher-order (trigram) claim is **provisional but now supported by a calibrated test**: the structural test against a fitted first-order null rejects at p = 0.024, and the corrected improvement rule has a **0.000 false-positive rate across all five zero-higher-order cells (0/30 replicates)**. Transformer and embedding results are a **negative** result under fully nested evaluation, and compact models are a **negative** result under both matched and full training budgets. See `docs/METHODS.md`, `docs/RESULTS_INDEX.md`, and `docs/HANDOFF.md`.
+**Claims status.** The primary supported finding is that immediate context beats frequency and position. The higher-order (trigram) claim is **provisional** because the current calibration is pilot-scale. Transformer and embedding results are a **negative** result under fully nested evaluation, and compact models are a **negative** result under both matched and full training budgets. See `docs/METHODS.md` and the consolidated `docs/PROJECT_REPORT.md`.
 
 ## Source corpus
 
@@ -142,9 +142,9 @@ All models share one training-only vocabulary policy: `<UNK>` is always present 
 
 ## Reproducibility and result provenance
 
-- `docs/BASELINE.md` records the pre-correction baseline: commit, environment, checks, and the results preserved before any correction.
+- `docs/PROJECT_REPORT.md` records the pre-correction baseline, current results, limitations, and next steps in one consolidated report.
 - `outputs/archive_pre_correction_4f81402/` holds the pre-correction results verbatim, with every file hashed in `BASELINE_MANIFEST.json`.
-- `docs/RESULTS_INDEX.md` indexes every experiment by dataset, grouping policy, task, metric, OOV handling, training budget, tuning, result location, and interpretation status.
+- Each experiment's dataset, grouping policy, metric, OOV handling, budget, output location, and interpretation status are summarized in `docs/PROJECT_REPORT.md`.
 - `docs/METHODS.md` is a **retrospective** methods and claims specification, written after the initial analyses, not a preregistration.
 
 

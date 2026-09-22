@@ -9,7 +9,7 @@ method is described here that the pipeline does not implement.
 
 ## 0. Correction status
 
-A correction pass was applied on top of the baseline recorded in `docs/BASELINE.md`
+A correction pass was applied on top of the baseline recorded in `docs/PROJECT_REPORT.md`
 (commit `4f81402`). Pre-correction results are preserved verbatim under
 `outputs/archive_pre_correction_4f81402/`. This table states what is **implemented**,
 what is **smoke-tested**, and what remains **pending**, so no reader mistakes a plan
@@ -17,7 +17,7 @@ for a result.
 
 | Correction | Status | Evidence |
 | --- | --- | --- |
-| Baseline recorded, pre-correction outputs archived and hashed | implemented | `docs/BASELINE.md`, `BASELINE_MANIFEST.json` |
+| Baseline recorded, pre-correction outputs archived and hashed | implemented | `docs/PROJECT_REPORT.md`, `BASELINE_MANIFEST.json` |
 | Three statistical questions separated; FP labelling rule enforced | implemented, run | §4b, `tests/test_power_analysis.py` |
 | Negative effects can never count as positive discoveries | implemented, tested | `pipeline.signflip_tests`, regression test |
 | Shared grouping / fold assignment / OOF scoring / leakage utilities | implemented, tested | `src/arthanvesana/stats/grouping.py`, `tests/test_grouping.py` |
@@ -30,7 +30,7 @@ for a result.
 | Compact-model comparison repaired (real identities, matched budgets, position models, HMM quality) | implemented, **run, tested** | §7, `outputs/compact_models/` |
 | Matched-transcription comparison repaired (pair table, shared strict partitions, subgroup metrics) | implemented, **run, tested** | §5, `outputs/transcription_sensitivity/` |
 | Direction diagnostics refined (union groups, OOV-controlled transfer, three boundary models, position classes) | implemented, **run, tested** | §5, `outputs/direction_diagnostics/` |
-| Full 100-replicate, 3-size, multi-strength calibration grid | **pending** (runtime: ~100 h serial) | §4b, resume command in `docs/HANDOFF.md` |
+| Full 100-replicate, 3-size, multi-strength calibration grid | **pending** (runtime: ~100 h serial) | §4b, resume command in `docs/PROJECT_REPORT.md` |
 | Reversal invariance of the bigram context model | **not achievable** as documented | §5 — left/right terms are transpose-related |
 
 **Run scale actually achieved.** The calibration grid completed **112 replicates** (6 per
@@ -38,7 +38,7 @@ cell) at 1× size only, not the ≥100 per cell across 0.5×/1×/2× that the br
 The structural test therefore rests on 20 calibration and 20 evaluation null draws. This
 is enough to support the qualitative reading reported here and **not** enough to resolve
 a λ ≈ 0.43 effect precisely. The runner is resumable, so the larger grid can be completed
-by re-running the same command; the exact resume command is in `docs/HANDOFF.md`.
+by re-running the same command; the project-level next steps are in `docs/PROJECT_REPORT.md`.
 
 
 ## 1. Objective and scope
