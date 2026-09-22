@@ -7,6 +7,40 @@ retrospective specification, not a preregistration. All numbers are reproduced f
 reports under `outputs/` and the conventions in `README.md` and `data/PROVENANCE.md`; no
 method is described here that the pipeline does not implement.
 
+## 0. Correction status
+
+A correction pass was applied on top of the baseline recorded in `docs/BASELINE.md`
+(commit `4f81402`). Pre-correction results are preserved verbatim under
+`outputs/archive_pre_correction_4f81402/`. This table states what is **implemented**,
+what is **smoke-tested**, and what remains **pending**, so no reader mistakes a plan
+for a result.
+
+| Correction | Status | Evidence |
+| --- | --- | --- |
+| Baseline recorded, pre-correction outputs archived and hashed | implemented | `docs/BASELINE.md`, `BASELINE_MANIFEST.json` |
+| Three statistical questions separated; FP labelling rule enforced | implemented, run | §4b, `tests/test_power_analysis.py` |
+| Negative effects can never count as positive discoveries | implemented, tested | `pipeline.signflip_tests`, regression test |
+| Shared grouping / fold assignment / OOF scoring / leakage utilities | implemented, tested | `src/arthanvesana/stats/grouping.py`, `tests/test_grouping.py` |
+| Largest-component-first seeded fold balancing + load reporting | implemented, tested | `grouping.assign_folds`, `grouping.fold_loads` |
+| Bigram–trigram: two estimands, five fold seeds, largest-component sensitivity, auditable per-token scores | implemented, **run** | §4a, `outputs/ngram_inference/` |
+| Artifact-type metadata retained (was always "unknown") | implemented, **run** | `data/parse.py`, `outputs/ngram_inference/` |
+| Generator state-update bug fixed; descriptions corrected | implemented, tested | `simulate/generators.py` |
+| Calibration runner resumable with per-replicate output | implemented, **run** | `outputs/power_analysis/replicates/` |
+| Structural test on a fitted first-order null with disjoint calibration/evaluation sets | implemented, **run** | §4b, `outputs/power_analysis/` |
+| Compact-model comparison repaired (real identities, matched budgets, position models, HMM quality) | implemented, **run, tested** | §7, `outputs/compact_models/` |
+| Matched-transcription comparison repaired (pair table, shared strict partitions, subgroup metrics) | implemented, **run, tested** | §5, `outputs/transcription_sensitivity/` |
+| Direction diagnostics refined (union groups, OOV-controlled transfer, three boundary models, position classes) | implemented, **run, tested** | §5, `outputs/direction_diagnostics/` |
+| Full 100-replicate, 3-size, multi-strength calibration grid | **pending** (runtime: ~100 h serial) | §4b, resume command in `docs/HANDOFF.md` |
+| Reversal invariance of the bigram context model | **not achievable** as documented | §5 — left/right terms are transpose-related |
+
+**Run scale actually achieved.** The calibration grid completed **112 replicates** (6 per
+cell) at 1× size only, not the ≥100 per cell across 0.5×/1×/2× that the brief specifies.
+The structural test therefore rests on 20 calibration and 20 evaluation null draws. This
+is enough to support the qualitative reading reported here and **not** enough to resolve
+a λ ≈ 0.43 effect precisely. The runner is resumable, so the larger grid can be completed
+by re-running the same command; the exact resume command is in `docs/HANDOFF.md`.
+
+
 ## 1. Objective and scope
 
 The objective is the **structural characterization of the Sindhu-Sarasvatī (Indus) sign
@@ -67,46 +101,143 @@ are dependent, and pooling over overlapping repeated splits can count the same r
 multiple times. The corrected design (`scripts/run_ngram_inference.py`) uses deterministic
 5-fold grouped cross-fitting:
 
-1. Connected components are indivisible groups assigned to folds by seeded greedy balancing
-   (primary: token count; secondary: span count).
-2. MKN bigram and trigram are trained on four folds; every token of the held-out fold is
-   scored under both models; each record receives **exactly one out-of-fold prediction**.
-3. Token differences `d = log2 P_trigram - log2 P_bigram` are aggregated **within each
+1. Connected components are indivisible groups assigned to folds by seeded greedy
+   balancing that places the **largest components first** (primary: token count;
+   secondary: span count; seeded tie-breaking). Realized fold loads and the
+   unavoidable imbalance from oversized components are reported.
+2. MKN bigram and trigram are trained on four folds; every token of the held-out
+   fold is scored under both models; each record receives **exactly one
+   out-of-fold prediction**.
+3. The paired difference is `d = log2 P_trigram - log2 P_bigram` (bits/token);
+   positive favours the trigram. Token differences are aggregated **within each
    connected group** before inference.
-4. **Primary estimand**: macro (unweighted) mean of group means, with a group-level
-   sign-flip randomization test (20,000 permutations, `p = (exceedances+1)/(permutations+1)`,
-   never 0) and a 95% cluster bootstrap over groups (10,000 replicates).
-5. **Secondary estimand** (reported as secondary): token-weighted mean, uncertainty by
-   resampling whole groups.
+4. **Primary estimand**: macro (unweighted) mean of group means — "does the
+   trigram help a typical connected group?"
+5. **Secondary estimand**: token-weighted mean — "does it help a typical token?"
+   Large components dominate this one. The two answer different questions and are
+   **never averaged together**.
+6. The complete procedure is repeated under five predefined fold seeds. Each seed
+   is an independent run; repeated predictions across seeds are **never pooled as
+   independent observations**, and no seed is averaged into the primary result.
+7. The largest connected component is reported on its own, inside the full
+   estimate, and in an explicitly labelled sensitivity analysis excluding it. The
+   full-data estimate remains primary; the large group is not dropped to improve
+   significance.
+8. Per-token scores are saved with inscription, artifact and group identifiers so
+   every stratum can be audited back to the source records.
+9. Exploratory breakdowns use clear length labels (`1–2`, `3–4`, `5–7`, `8+`) and
+   per-token frequency bands defined from **each fold's training tokens only**.
+   Artifact-type metadata is retained. Sample sizes are reported per stratum and
+   small strata are descriptive only.
 
-Result on this corpus: **macro group effect +0.0279 bits/token, 95% CI [+0.0112, +0.0446]**
-(2,262 groups, zero fold-leakage). Secondary token-weighted +0.0440 bits/token with 95% CI
-[−0.0177, +0.1187] — **including zero**, because a few very large groups dominate token
-weighting. The corrected effect is roughly half the invalid token-level estimate (+0.065).
+**Limits of the intervals.** The cluster-bootstrap intervals resample *fixed*
+out-of-fold group scores. They capture group-level sampling variability but **not**
+the uncertainty from retraining the models, and the two fitted models share training
+data within a fold. They are not a substitute for whole-pipeline simulation, which
+the calibration runner provides.
 
-### 4b. The randomization p-value is NOT usable (false-positive calibration)
+The group-level randomization p-value is retained as a **descriptive** statistic
+only; see §4b.
 
-The synthetic calibration (`scripts/run_power_analysis.py`) falsified the inferential use of
-the group-level randomization test. Over 32 simulated corpora at 1x size, **every cell —
-including all 16 zero-higher-order-effect corpora — returned the floor p-value 0.001**, and
-under zero higher-order structure the macro effect was systematically **negative**
-(mean −0.0626, range [−0.0917, −0.0246]) rather than centred on zero.
 
-Cause: a modified Kneser-Ney trigram carries more parameters than the bigram, so with no
-genuine higher-order structure it *loses* held-out log loss. The sign-flip test assumes group
-differences are symmetric about zero under the null; because the null is centred near −0.06,
-the test rejects almost always and does not control the false-positive rate.
+### 4b. Three separate questions, and what the calibration does and does not show
 
-Consequences, applied throughout this document:
+The earlier draft of this section claimed that a 100% two-sided rejection rate in
+the synthetic calibration proved the randomization test anti-conservative. **That
+claim is withdrawn.** It conflated three different questions:
 
-- **Do not cite the randomization p-value (0.0016) as evidence.** It is anti-conservative.
-- The **point estimate remains informative**, but it must be read **against the calibrated
-  null band** instead. Under zero higher-order structure the macro effect lies in
-  **[−0.0917, −0.0246]** (1x size); the observed **+0.0279 sits above that entire band**, which
-  is the defensible basis for a small positive higher-order component.
-- Detection rate is 1.000 in every cell, so it measures "the test always rejects", not power.
-  Redesigning the test (e.g. a null calibrated on the bigram-vs-trigram parameter penalty, or
-  a paired comparison against matched null corpora) is required before any p-value is quoted.
+1. **Predictive difference** — do the fitted bigram and trigram differ in
+   held-out performance, in either direction? Tested two-sided.
+2. **Predictive improvement** — does the trigram improve held-out performance?
+   Tested one-sided positive.
+3. **Structural departure** — is the observed gain unusually large relative to a
+   specified first-order generative null passed through the *complete* estimation
+   pipeline? Tested by whole-pipeline simulation.
+
+A first-order data generator can produce a genuine predictive **disadvantage** for
+a more complex fitted model: a modified Kneser-Ney trigram carries more parameters
+than the bigram, so with no genuine higher-order structure it genuinely loses
+held-out log loss. A significant *negative* effect is therefore a real predictive
+difference, not a false discovery of higher-order structure. Counting it as a
+detection, as the earlier runner did, is a category error.
+
+Rules now enforced by `scripts/run_power_analysis.py`:
+
+- Every simulated dataset records the signed effect, its interval, the two-sided
+  result, a positive-rejection indicator, a negative-rejection indicator, and the
+  structural-test decision once that test is enabled.
+- A rate is labelled a **false-positive rate only where the scenario satisfies the
+  null hypothesis of that particular decision rule**. Valid nulls for the
+  *improvement* rule are `unigram`, `markov`, `shuffled_real`, and
+  `trigram_mixture` at `lam=0`. The *difference* column is a rejection rate and is
+  **never** a false-positive rate in this grid.
+- Position-conditioned, deterministic positional-slot, and within-inscription
+  shuffled corpora are named **controls or alternatives**, not pure first-order
+  nulls: they retain dependencies arising from length, position, or sign
+  composition. The **slot generator is an alternative, not a null** — its measured
+  positive-rejection rate is 1.000 with a *positive* mean effect, because position
+  within a span is correlated with order and a fitted trigram genuinely extracts
+  it. That column is **power**, not a false-positive rate.
+- Monte Carlo p-values use the plus-one correction and never equal zero. Rates
+  report their denominator and count failed and skipped simulations.
+
+**The randomization p-value remains unusable, for the reason now stated correctly.**
+Under zero higher-order structure the macro effect is systematically negative
+(pre-correction 1× runs: mean −0.0626, range [−0.0917, −0.0246]), because the
+fitted trigram loses. The sign-flip test assumes group differences are symmetric
+about zero under the null; because the null is centred below zero, the test rejects
+almost always and does not control the false-positive rate for the improvement
+question. It is retained only as a descriptive statistic and is not cited as
+evidence.
+
+**The earlier "null band" is also withdrawn as confirmatory evidence.** The band
+[−0.0917, −0.0246] was the observed minimum and maximum of **four** simulations per
+cell. A minimum and maximum from four draws is not a calibrated null band, and the
+observed +0.0279 was never legitimately "above the entire band" on that basis. The
+structural question is now answered only by the dedicated structural test, which
+generates corpora from a fitted first-order null, refits both models, re-runs the
+entire evaluation pipeline for every synthetic corpus, and compares the observed
+positive effect with the resulting null distribution. Threshold selection and
+false-positive evaluation use **disjoint** simulation sets.
+
+**Nor is the test claimed to be valid on its face.** Its assumptions and its
+cross-validation dependence still require examination: the null is fitted to finite
+data, generated corpora have no artifact or duplicate structure, and the p-value is
+conditional on the fitted null model. It is not proof of a linguistic mechanism.
+
+**Calibration results** (112 replicates at 1× size, 6 per cell):
+
+| Cell | mean effect | difference rule | improvement rule | FP-valid |
+| --- | --- | --- | --- | --- |
+| unigram | −0.0612 | 1.000 | **0.000** | yes |
+| markov (fitted null) | −0.0914 | 1.000 | **0.000** | yes |
+| position_only | −0.0677 | 1.000 | **0.000** | yes |
+| shuffled_real | −0.0383 | 1.000 | **0.000** | yes |
+| trigram λ=0.00 | −0.0958 | 1.000 | **0.000** | yes |
+| trigram λ=0.35 | −0.0147 | 0.500 | 0.000 | no |
+| trigram λ=0.40 | +0.0065 | 0.167 | **0.333** | no |
+| trigram λ=0.50 | +0.0579 | 1.000 | **1.000** | no |
+| trigram λ=1.00 | +0.5360 | 1.000 | **1.000** | no |
+| slot generator | +0.0105 | 1.000 | 1.000 | **no** |
+
+Readings that follow directly:
+
+- The **difference rule rejects in 100% of cells, including every zero-effect cell**.
+  It measures "the fitted models differ", not "higher-order structure exists", and
+  is therefore not a discovery criterion.
+- The **improvement rule is well behaved**: 0/30 false positives across the five
+  valid null cells, with power rising 0.000 → 0.333 → 1.000 as λ goes 0.35 → 0.50.
+  The observed real-corpus effect sits between the λ = 0.40 and λ = 0.50 cells.
+- **Structural test**: observed real-corpus effect **+0.0241** against the fitted
+  first-order null (mean −0.0914, 95% threshold −0.0862); **0 of 40** null draws
+  reached it → **p = 0.0244**, structural departure supported at α = 0.05. The
+  rule's false-positive rate on the independent evaluation half was **0.10 (2/20)** —
+  imprecise at that sample size, and consistent with a mildly liberal rule.
+
+This is the evidence that keeps the higher-order claim provisional rather than
+established: the test is calibrated at n = 20 per half, not at the scale needed to
+resolve a λ ≈ 0.43 effect, and it is conditional on an imperfectly reproducing null.
+
 
 ## 5. Corrected sensitivity terminology and diagnostics
 
@@ -118,19 +249,28 @@ Consequences, applied throughout this document:
   context beats frequency by +17.31 to +22.24 pp and position by +15.03 to +19.31 pp,
   10/0/0 everywhere.
 - **Direction diagnostics** (`scripts/run_direction_diagnostics.py`) investigate the
-  ~2.7-3.1 pp as-stored advantage:
-  - Global reversal with start/end flags swapped is nearly aggregate-invariant
-    (mean top-1 delta -0.0028), but the boundary probe confirms a real asymmetry: the
-    span START uses the `<S>` start distribution while the END gets a uniform
-    no-evidence term (`restore._mask_distributions`). Interior masks are exactly
-    mirror-symmetric (unit-tested).
-  - Cross-direction transfer is poor under high OOV (normalized-direction training
-    5.7-5.9% top-1) and much better as-stored/reversed (22.9-28.4%), reflecting
-    vocabulary coverage rather than order alone.
-  - Stratification: the normalized-minus-stored gap concentrates in short spans
-    (len<=3: -0.0246) and complete records; several sites (Kalibangan +0.0295,
-    Dholavira +0.0147) reverse sign. No single explanation is established; the
-    pipeline default is unchanged.
+  as-stored vs reading-order-normalized gap. On **identical union-grouped partitions**
+  the as-stored advantage is about **1.2 pp** (0.3193 vs 0.3076 top-1), smaller than
+  the 2.7–3.1 pp quoted from non-aligned splits:
+  - All orientation variants share the **same union-derived group keys**, so neither
+    ordering can leak an equivalent sequence across the split.
+  - Reversal is reported under **three boundary models**: `asymmetric` (default,
+    mean delta −0.0134), `none` (+0.0094), `symmetric` (−0.0046). **No model is
+    exactly reversal-invariant**, including `symmetric`. Equalizing the edge terms
+    removes the *boundary* asymmetry, but the context model's left term is
+    `P(w | prev)` while its right term is `P(next | w)`; these are transpose-related
+    and coincide only under detailed balance. The edge-symmetric models do show a
+    smaller delta than the default. Interior masks remain exactly mirror-symmetric
+    (unit-tested).
+  - **Cross-direction transfer is reported with OOV separated.** At *matched* OOV
+    (both 0.1815), `normalized_LR_to_RL` scores 0.0697 on shared-vocabulary targets
+    against `stored_LR_to_RL` at 0.2808. The earlier claim that vocabulary coverage
+    explains the gap is **refuted**: the ordering effect persists at equal OOV.
+  - **Position classes are reported separately**: singleton 0.0536, first 0.1604,
+    interior 0.3476, last 0.3485 (the previously missing last-position output).
+  - Stratification: the gap concentrates in short spans and complete records;
+    several sites reverse sign. No single explanation is established; the pipeline
+    default is unchanged and is not switched because another order predicts better.
 - **Fully nested model selection.** `run_transformer.py` and `run_embeddings.py` select
   configurations per OUTER split: an inner grouped fit/validation split is carved from the
   outer TRAIN partition only; all configurations are scored on inner validation; the
@@ -140,11 +280,27 @@ Consequences, applied throughout this document:
   are `<UNK>` context tokens; `<PAD>/<MASK>/<UNK>` are never candidates; OOV test targets
   remain failures and are reported.
 - **Same-family transcription sensitivity.** `scripts/run_transcription_sensitivity.py`
-  matches the primary corpus to the external ICIT transcription by CISI (one-to-one,
-  exclusions reported), builds IDENTICAL artifact-level test sets from stable catalog ids,
-  and evaluates frequency/position/context under both transcriptions. Agreement between
-  these ICIT-derived sources is NOT independent inter-annotator agreement. Raw external
-  sequences are not redistributed.
+  builds an **explicit artifact/inscription-level pair table before gap splitting**.
+  Only CISI with exactly one unambiguous record on each side enter the primary
+  comparison; multiple primary records are never merged because their sequences
+  agree, and one external inscription is never copied onto several primary spans.
+  The external side does not inherit the primary's boundary-completeness flags,
+  because the external source does not supply them. Two grouping protocols are
+  reported, both assigning identical folds to the same matched artifacts:
+
+  | Protocol | Sequences crossing folds per seed | Primary context top-1 | External context top-1 |
+  | --- | --- | --- | --- |
+  | `artifact_only` | **56–74** | 0.3959 | 0.3834 |
+  | `artifact_plus_union_duplicates` | **0** | **0.3016** | **0.3018** |
+
+  Record accounting: **1,841** matched inscriptions, **369** held out per seed,
+  **17,342** prediction events, after excluding 534 ambiguous-primary and 1,668
+  unmatched-primary CISI. The earlier ~39.6% figure came from artifact-only
+  grouping, which leaks 56–74 duplicate sequences across the split and inflates the
+  score. Under the strict protocol both transcriptions agree almost exactly and
+  context still beats frequency (+19.6 pp) and position (+15.4 pp). Agreement
+  between these ICIT-derived sources is NOT independent inter-annotator agreement.
+  Raw external sequences are not redistributed.
 
 ## 6. Models compared
 
@@ -161,28 +317,64 @@ Immediate context improves sign prediction beyond frequency and position under t
 evaluated corpus and preprocessing choices: +17 to +22 pp over frequency and +15 to +19 pp
 over position, positive in every tested cell and partition convention.
 
-### Secondary claim, pending corrected inference
+### Secondary claim — provisional, now supported by a calibrated test
 
-A trigram may contain a small amount of predictive information beyond a bigram. The evidence
-is **the point estimate against the calibrated null band**, NOT a p-value: the macro group
-effect is +0.028 bits/token with 95% CI [+0.0112, +0.0446], and synthetic calibration places
-the zero-higher-order-effect macro effect in [−0.0917, −0.0246], so the observed value sits
-above the entire null band. The group-level randomization p-value (0.0016) is
-**anti-conservative and is not cited** (see §4b); the token-weighted interval includes zero.
-Do not promote this claim until the test is redesigned and the result replicates on
-alternative fold seeds and corpus variants.
+A trigram contains a small amount of predictive information beyond a bigram.
+On the full-data estimate (primary fold seed 0) the macro group effect is
+**+0.02702 bits/token** (95% CI [+0.01048, +0.04395]), stable across five fold
+seeds (range [+0.02592, +0.03147]). The token-weighted effect is **+0.03623** with
+95% CI [−0.01173, +0.09211], which **includes zero**, because a few very large
+groups dominate token weighting. The two estimands answer different questions and
+are never averaged together.
 
-### Null calibration (new)
+The group-level randomization p-value is **descriptive only and is not cited**
+(§4b). The earlier claim that the observed effect sat above a "calibrated null
+band" is withdrawn: that band was the min/max of four simulations.
 
-`scripts/run_power_analysis.py` is now a required part of the evidence chain: no higher-order
-claim may be reported without a matched zero-effect null band from the same pipeline.
+**What now supports the claim** is the structural test (§4b), not a p-value:
 
-### Negative result
+- The corrected **improvement rule has a 0.000 false-positive rate across all five
+  valid null cells** (unigram, markov, position_only, shuffled_real, trigram λ=0;
+  0/30 replicates).
+- The **structural test rejects**: the observed real-corpus effect (+0.0241) exceeds
+  the fitted first-order null distribution, with 0 of 40 null draws reaching it →
+  **p = 0.0244**. The rule's false-positive rate on the independent evaluation half
+  was 0.10 (2/20), imprecise at that sample size.
+- The difference rule rejects in 100% of cells including zero-effect ones, so it is
+  **not** a discovery criterion and is not used as one.
 
-The tested transformer and embedding models do not outperform the bigram under fully
-nested evaluation at this corpus size (earlier non-nested runs: transformer 19.4%,
-embeddings ~9% vs bigram 29.2%; nested results regenerate into `outputs/transformer` and
-`outputs/embeddings`).
+**Limits that keep this provisional.** The p-value is conditional on a null fitted
+to finite data that preserves only count, length, vocabulary and first-order
+transition structure; generated corpora have no artifact or duplicate structure,
+which the real corpus does. Power at the observed effect is modest (λ = 0.40 cell
+detects 33% of the time). Larger calibration runs and the remaining corpus sizes
+are required before promotion.
+
+### Negative result — learned and compact models
+
+The tested transformer and embedding models do not outperform the bigram under
+fully nested evaluation at this corpus size: transformer **23.65% ± 2.87** versus
+bigram **29.21% ± 1.87** restoration top-1, losing on 10 of 10 outer splits
+(−5.56 pp); embeddings ~9% versus 29.2%. The earlier non-nested transformer figure
+of 19.4% is superseded by the nested result.
+
+**Compact structural models are also a negative result** under two comparable
+budgets (all models on the same capped subset; all models on the full outer-training
+partition, with the HMM capped and saying so):
+
+| Budget | bigram | position exact | position relative | exact+complete | HMM |
+| --- | --- | --- | --- | --- | --- |
+| matched (cap 600 records) | **7.06** | 8.49 | 8.90 | 8.42 | 8.16 |
+| full | **5.97** | 7.51 | 7.29 | 7.56 | 8.09 |
+
+Evaluation takes full records, so artifact identity and grouping survive the runner;
+HMM state count and position smoothing strength are selected on inner **grouped**
+splits. All models share a training-only vocabulary policy with `<UNK>` always
+present, so one unseen sign never discards a sequence's known-token contributions;
+OOV rates are reported per model (0.130 matched, 0.020 full). The states remain an
+economical latent-state description of positional sequence structure and are not
+words, phrases, grammatical roles, or semantic classes.
+
 
 ### Exploratory only
 
