@@ -2,12 +2,19 @@
 
 Generators reproduce: inscription count, the empirical sequence-length
 distribution, vocabulary size, and the heavy-tailed empirical sign-frequency
-distribution. Matched exactly: inscription count, length distribution (sampled
-from the empirical length list), vocabulary size, unigram frequencies.
-Matched approximately: higher-order structure (empirical bigram / trigram
-transitions) and duplicate component structure. No generator represents
-natural language or the true Indus production process; they are calibration
-instruments only.
+distribution.
+
+**Sampled from** the empirical corpus: inscription count, the length
+distribution (lengths are drawn from the empirical length list), the vocabulary,
+and the unigram frequencies. **Not preserved**: artifact relationships,
+inscription boundaries, duplicate/component structure, missingness, or
+completeness. Each generated inscription is independent, so a generated corpus
+has no artifact or duplicate structure at all and its connected-component sizes
+are not comparable to the real corpus. Higher-order transition structure is
+controlled by an explicit parameter, not reproduced.
+
+No generator represents natural language or the true Indus production process;
+they are calibration instruments only.
 """
 
 from __future__ import annotations
@@ -18,7 +25,7 @@ import numpy as np
 
 
 def empirical_profile(records):
-    """Extract the empirical properties a generator needs."""
+    """Extract the empirical properties a generator samples from."""
     seqs = [r["sequence"] for r in records if r["sequence"]]
     lengths = [len(s) for s in seqs]
     unigram = Counter(s for seq in seqs for s in seq)
@@ -63,8 +70,13 @@ def gen_unigram(profile, n_inscriptions, seed):
 
 
 def gen_position_only(profile, n_inscriptions, seed):
-    """Position-conditioned sampler: first token over-samples empirical
-    starters, last over-samples empirical enders, middle = unigram."""
+    """Position-conditioned sampler.
+
+    The first token is drawn from the empirical starter distribution, the last
+    from the empirical ender distribution, and interior tokens from the empirical
+    unigram. This is a **named control**, not a pure first-order null: it retains
+    length and position dependence by construction.
+    """
     rng = np.random.default_rng(seed)
     marginal = _sample_unigram(profile["unigram"], rng)
     marginal = dict(zip(marginal[0], marginal[1]))
@@ -88,7 +100,12 @@ def gen_position_only(profile, n_inscriptions, seed):
 
 
 def gen_markov(profile, n_inscriptions, seed):
-    """First-order Markov chain on the empirical bigram transitions."""
+    """First-order Markov chain sampling the empirical bigram transitions.
+
+    This is the fitted first-order null used for structural calibration: it
+    preserves the empirical length distribution, vocabulary, and first-order
+    transition structure, and contains no genuine higher-order structure.
+    """
     rng = np.random.default_rng(seed)
     bigram = profile["bigram"]
     unigram = profile["unigram"]
@@ -103,6 +120,11 @@ def gen_markov(profile, n_inscriptions, seed):
             if not followers:
                 signs, weights = _sample_unigram(unigram, rng)
                 seq.append(_draw(signs, weights, rng))
+                # The fallback draw is still an observation, so the chain state
+                # must advance to it. Leaving ``prev`` unchanged would make the
+                # next token condition on a stale context and silently turn the
+                # first-order generator into something else.
+                prev = seq[-1]
                 continue
             names = sorted(followers)
             w = np.array([followers[n] for n in names], dtype=float)
@@ -114,11 +136,15 @@ def gen_markov(profile, n_inscriptions, seed):
 
 
 def gen_trigram_mixture(profile, n_inscriptions, seed, lam):
-    """Controlled higher-order generator.
+    """Controlled higher-order mixture.
 
     Samples from P(w | h2, h1) = (1-lam) * P_bi(w|h1) + lam * P_tri(w|h2,h1).
-    lam = 0 reproduces the first-order Markov generator (zero higher-order
-    effect); increasing lam adds known higher-order strength.
+    At ``lam = 0`` the sampling distribution reduces algebraically to
+    ``P_bi(w|h1)``, i.e. to the same first-order transition distribution that
+    :func:`gen_markov` samples, so zero strength is a genuine zero-higher-order
+    cell; increasing ``lam`` adds a known higher-order component. Both context
+    updates happen on every path, including the unigram fallback, so the chain
+    state is never stale.
     """
     rng = np.random.default_rng(seed)
     bigram = profile["bigram"]
@@ -153,9 +179,16 @@ def gen_trigram_mixture(profile, n_inscriptions, seed, lam):
 
 
 def gen_hmm_slots(profile, n_inscriptions, seed, n_states=3):
-    """Positional/slot HMM: state determined by relative position; emissions
-    from per-state frequency-sliced vocabularies. Returns (sequences,
-    true_states) so cluster recovery is checkable."""
+    """Deterministic positional-slot generator.
+
+    This is NOT a stochastic hidden Markov model and must not be described as
+    one: there is no latent state sequence and no transition matrix. The state is
+    a deterministic function of relative position (first quarter, middle, last
+    quarter), and emissions are drawn from per-state frequency-sliced
+    vocabularies. It exists as a control that carries strong position structure.
+
+    Returns ``(sequences, true_states)`` so state recovery is checkable.
+    """
     rng = np.random.default_rng(seed)
     unigram = profile["unigram"]
     lengths = profile["lengths"]
