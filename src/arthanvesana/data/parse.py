@@ -223,6 +223,7 @@ def analysis_records(
         if artifact is None:
             artifact = identity_value(row.get("artefact_id"))
         cisi = identity_value(row.get("cisi"))
+        artefact_type = identity_value(row.get("artefact_type"))
         artifact_source = "explicit" if artifact else "cisi" if cisi else "inscription"
         artifact = artifact or cisi or str(inscription_id)
         complete = parse_bool(row.get("complete"))
@@ -234,6 +235,7 @@ def analysis_records(
                 "artifact_source": artifact_source,
                 "cisi": cisi,
                 "site": site,
+                "artefact_type": artefact_type,
                 "direction": direction,
                 "reading_order_known": known,
                 "complete": complete,

@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import math
-import random
 
 import numpy as np
 
+from arthanvesana.stats.grouping import assign_folds
 from arthanvesana.stats.ngrams import NGramModel
 from arthanvesana.stats.sampling import connected_groups
+
+__all__ = [
+    "assign_folds", "crossfit_effect", "records_from_seqs", "signflip_tests",
+]
 
 
 def records_from_seqs(seqs):
@@ -35,27 +39,31 @@ def _logprobs(model, seqs):
     return out
 
 
-def assign_folds(group_stats, n_folds, seed):
-    """Greedy fold assignment balancing tokens then spans; deterministic."""
-    order = list(group_stats)
-    random.Random(seed).shuffle(order)
-    load = [(0, 0) for _ in range(n_folds)]
-    assignment = {}
-    for gid in order:
-        tokens, spans = group_stats[gid]
-        fold = min(range(n_folds), key=lambda f: (load[f][0], load[f][1], f))
-        assignment[gid] = fold
-        load[fold] = (load[fold][0] + tokens, load[fold][1] + spans)
-    return assignment
-
-
-def crossfit_effect(seqs, n_folds=5, seed=0, permutations=2000, bootstrap=2000):
+def crossfit_effect(seqs, n_folds=5, seed=0, permutations=2000, bootstrap=2000,
+                    alpha=0.05):
     """Run the grouped cross-fitted bigram-vs-trigram inference on sequences.
 
-    Returns the primary estimand block: macro group effect, its cluster
-    bootstrap CI, and the group-level sign-flip p (never 0). Group means are
-    the independent units; duplicating tokens inside one group changes group
-    size but not the number of groups.
+    The signed effect is the macro (unweighted) mean over connected groups of
+    the per-token paired difference ``d = log2 P_trigram - log2 P_bigram``, so a
+    positive value means the trigram predicts the held-out token better.
+
+    Three decisions are reported separately and must not be conflated:
+
+    * **predictive difference** (``p_two_sided`` / ``reject_difference``):
+      do the two fitted models differ in held-out performance, in either
+      direction?
+    * **predictive improvement** (``p_positive`` / ``reject_positive``):
+      does the trigram improve held-out performance? A significantly *negative*
+      effect can never satisfy this indicator.
+    * **structural departure**: whether the observed gain is unusual under a
+      separately calibrated first-order generative null. That question is not
+      answerable from this function alone, because it requires re-running the
+      whole pipeline on corpora drawn from the null; ``structural_decision`` is
+      therefore ``None`` here and is filled in by the calibration runner.
+
+    Group means are the independent units; duplicating tokens inside one group
+    changes group size but not the number of groups. All Monte Carlo p-values
+    use the plus-one correction, so none can equal zero.
     """
     records = records_from_seqs(seqs)
     groups = connected_groups(records, track="artifact", group_duplicates=True)
@@ -72,17 +80,74 @@ def crossfit_effect(seqs, n_folds=5, seed=0, permutations=2000, bootstrap=2000):
     ]
     gm = np.asarray(group_means, dtype=float)
     if gm.size == 0:
-        return {"macro_effect": None, "ci95": None, "p": None, "n_groups": 0}
+        return _empty_effect()
     all_bi = [x for vals in bi.values() for x in vals]
     all_tri = [x for vals in tri.values() for x in vals]
+    tests = signflip_tests(gm, permutations, seed)
+    effect = float(gm.mean())
     return {
-        "macro_effect": float(gm.mean()),
+        "macro_effect": effect,
         "ci95": list(_cluster_boot(gm, bootstrap, seed)),
-        "p": _signflip_p(gm, permutations, seed),
+        # ``p`` is retained as the two-sided predictive-difference p-value.
+        "p": tests["p_two_sided"],
+        "p_two_sided": tests["p_two_sided"],
+        "p_positive": tests["p_positive"],
+        "p_negative": tests["p_negative"],
+        "reject_difference": tests["p_two_sided"] < alpha,
+        "reject_positive": tests["p_positive"] < alpha,
+        "reject_negative": tests["p_negative"] < alpha,
+        "structural_decision": None,
+        "alpha": alpha,
         "n_groups": int(gm.size),
         "weighted_effect": _weighted_effect(groups, diffs),
         "logloss_bigram": -float(np.mean(all_bi)) if all_bi else None,
         "logloss_trigram": -float(np.mean(all_tri)) if all_tri else None,
+    }
+
+
+def _empty_effect():
+    """Effect block for a run that produced no scorable group."""
+    return {
+        "macro_effect": None, "ci95": None, "p": None, "p_two_sided": None,
+        "p_positive": None, "p_negative": None, "reject_difference": False,
+        "reject_positive": False, "reject_negative": False,
+        "structural_decision": None, "n_groups": 0,
+    }
+
+
+def signflip_tests(group_means, permutations, seed):
+    """Group-level sign-flip tests on the macro mean, in one permutation pass.
+
+    The null distribution is the signed mean of ``group_means`` with
+    independently flipped signs. Three statistics are read off the same
+    permutation set:
+
+    * two-sided: ``P(|m*| >= |m_obs|)``
+    * positive:  ``P(m* >= m_obs)``
+    * negative:  ``P(m* <= m_obs)``
+
+    Each uses the plus-one correction, so no returned p-value is zero.
+    """
+    gm = np.asarray(group_means, dtype=float)
+    n = gm.size
+    if n == 0:
+        return {"p_two_sided": None, "p_positive": None, "p_negative": None}
+    observed = float(gm.mean())
+    rng = np.random.default_rng(seed)
+    exceed_two = exceed_pos = exceed_neg = 0
+    for _ in range(permutations):
+        m = float(gm.dot(rng.choice((-1.0, 1.0), size=n)) / n)
+        if abs(m) >= abs(observed):
+            exceed_two += 1
+        if m >= observed:
+            exceed_pos += 1
+        if m <= observed:
+            exceed_neg += 1
+    denom = permutations + 1
+    return {
+        "p_two_sided": (exceed_two + 1) / denom,
+        "p_positive": (exceed_pos + 1) / denom,
+        "p_negative": (exceed_neg + 1) / denom,
     }
 
 
@@ -118,17 +183,6 @@ def _weighted_effect(groups, diffs):
             num += sum(d)
             den += len(d)
     return num / den if den else None
-
-
-def _signflip_p(gm, permutations, seed):
-    rng = np.random.default_rng(seed)
-    observed = abs(float(gm.mean()))
-    exceed = 0
-    for _ in range(permutations):
-        signs = rng.choice((-1.0, 1.0), size=gm.size)
-        if abs(float(gm.dot(signs)) / gm.size) >= observed:
-            exceed += 1
-    return (exceed + 1) / (permutations + 1)
 
 
 def _cluster_boot(gm, replicates, seed):
