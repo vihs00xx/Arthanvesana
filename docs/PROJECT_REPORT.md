@@ -65,7 +65,138 @@ that all structural models are impossible.
 - Direction transfer and boundary results are exploratory. Normalized versus
   as-stored orientation remains a real unresolved source of variation.
 
-## 4. Experiment inventory
+## 4. Implementation and analysis system
+
+The project is implemented as a small, reproducible Python package under
+`src/arthanvesana/`, with command-line runners under `scripts/` and regression
+tests under `tests/`. The implementation has five layers:
+
+1. **Data and provenance** — parsing, gap-aware preprocessing, metadata joins,
+   corpus validation, source hashes, and a documented processed corpus.
+2. **Shared evaluation infrastructure** — artifact/inscription/exact-sequence
+   connected components, indivisible group assignment, seeded largest-first
+   fold balancing, leakage diagnostics, out-of-fold predictions, and audit
+   tables with record and group identifiers.
+3. **Statistical baselines** — frequency, position, smoothed bigram and
+   trigram models, held-out restoration, log loss, MRR, OOV accounting, and
+   group-level inference.
+4. **Model and robustness runners** — transformer, PPMI/SVD, skip-gram,
+   compact position/complete-context/HMM models, direction diagnostics,
+   transcription matching, motif stratification, and leave-one-site-out
+   robustness.
+5. **Simulation and quality control** — resumable synthetic calibration,
+   disjoint calibration/evaluation sets, explicit decision rules, unit tests,
+   Ruff linting, and mypy checks.
+
+The central anti-leakage design is that related records are connected before
+fold assignment. Every member of a connected component stays in one fold;
+duplicate sequences therefore cannot appear in both training and test data.
+Configuration selection and early stopping use inner grouped partitions, never
+outer test records. The n-gram analysis reports macro group means as its primary
+estimand and token-weighted means separately, rather than silently pooling them.
+
+## 5. Quantitative results
+
+### 5.1 Main restoration result
+
+On the corrected grouped evaluation, immediate context reaches approximately
+29.21% top-1 restoration accuracy, compared with 10.82% for frequency and
+12.84% for position. This is an absolute gain of roughly 18.4 percentage
+points over frequency and 16.4 points over position. These are predictive
+associations in the corpus, not evidence that the signs have been decoded.
+
+### 5.2 Bigram versus trigram log loss
+
+The analysis contains 4,624 spans, 16,469 tokens, and 2,262 connected groups,
+with zero detected leakage. The primary macro effect (trigram improvement in
+bits/token) is +0.02702 with a descriptive cluster-bootstrap 95% interval of
+[+0.01048, +0.04395]. Across five pre-specified fold seeds, effects range from
+ +0.02592 to +0.03147 (mean +0.02867). The secondary token-weighted estimate
+is +0.03623 with interval [−0.01173, +0.09211], which includes zero.
+
+The largest component (`INDUS-0038`) contains 22.1% of tokens and has an own
+effect of −0.09386. Removing it changes the macro estimate to +0.02707 but the
+token-weighted estimate to +0.07321. This is why the full-data macro estimate
+remains primary and the leave-one-component result is labelled sensitivity.
+
+### 5.3 Learned representations and transformer
+
+The fully nested transformer obtains 23.65% ± 2.87 top-1 versus 29.21% ± 1.87
+for the bigram and loses on all 10 outer splits (−5.56 percentage points).
+PPMI/SVD obtains about 8.30% and skip-gram about 9.05%. These are negative
+results under the tested architectures and budgets; they do not establish that
+no neural or distributional representation could ever help.
+
+### 5.4 Transcription and direction sensitivity
+
+Under strict matched transcription grouping, the primary and external
+transcriptions obtain 30.16% and 30.18% context accuracy, respectively, with no
+sequence crossing folds. The older 39–40% result came from an artifact-only
+protocol with 56–74 cross-fold duplicate sequences and is not valid evidence.
+
+For orientation diagnostics, the as-stored versus normalized context results
+are approximately 31.93% and 30.76% on identical union-grouped partitions. The
+approximately 1.2-point gap is exploratory; boundary-model and OOV-separated
+analyses show that ordering and vocabulary coverage both matter.
+
+### 5.5 Compact structural models
+
+Held-out bits/token (lower is better) under matched and full budgets are:
+
+| Budget | Bigram | Position exact | Position relative | Complete-context | HMM |
+|---|---:|---:|---:|---:|---:|
+| Matched cap | **7.0609** | 8.4865 | 8.8997 | 8.4246 | 8.1635 |
+| Full outer training | **5.9663** | 7.5094 | 7.2874 | 7.5562 | 8.0941 |
+
+The bigram wins every comparison. HMM fits are not all converged (100 of 200
+inner trials converged), so the HMM conclusion should remain bounded to the
+implemented search and reported convergence quality.
+
+### 5.6 Synthetic calibration and statistical significance
+
+The calibration runner separates three questions: any predictive difference,
+positive improvement, and structural departure from a fitted first-order null.
+The current pilot contains six replicates per cell at the 1× size for the
+resumable grid, plus disjoint structural calibration/evaluation draws.
+
+The improvement rule had 0/30 false positives across the five valid null cells;
+power increased from 0.000 at λ=0.35 to 0.333 at λ=0.50 and 1.000 at stronger
+effects. The observed structural effect was +0.0241 against a fitted-null mean
+of −0.0914, giving a conditional structural p≈0.0244. However, the independent
+evaluation false-positive estimate was 2/20 = 0.10, so this p-value is not yet
+precisely calibrated. It is evidence of departure under the chosen fitted null,
+not proof of a linguistic mechanism or a universal significance claim.
+
+## 6. Scientific significance
+
+The strongest defensible conclusion is that sign sequences in this corpus are
+not well described by independent sign frequency or position alone: neighboring
+context carries reproducible predictive information. The effect survives strict
+grouped evaluation and transcription sensitivity, making it a meaningful
+empirical property of the dataset.
+
+The project does **not** show that the Indus script has been deciphered. It does
+not identify a language, grammar, morphemes, meanings, or a unique generative
+mechanism. The trigram result suggests possible higher-order structure but is
+limited by token-weighted uncertainty and incomplete calibration. The negative
+transformer, embedding, and compact-model results are useful controls: the
+signal is not automatically recovered by every more flexible model, and the
+simple bigram is a strong baseline.
+
+## 7. Limitations affecting interpretation
+
+- The connected-group structure is highly imbalanced; one component contains
+  about one-fifth of all tokens.
+- The full calibration grid (100 replicates × three sizes × multiple strengths)
+  has not been completed.
+- HMM optimization is partly non-converged.
+- Direction normalization is not settled and remains exploratory.
+- The corpus is a finite, curated epigraphic dataset; results may not
+  generalize to other corpora or future readings.
+- Confidence intervals quantify the stated resampling procedure; they are not
+  automatically population-level intervals over all possible inscriptions.
+
+## 8. Experiment inventory
 
 | Experiment | Main output | Interpretation |
 |---|---|---|
@@ -86,7 +217,7 @@ Each runner writes a text report and machine-readable JSON in its output
 directory. The scripts and tests are the authoritative reproducibility layer;
 the generated reports are not source code and are ignored by Git.
 
-## 5. Provenance and pre-correction baseline
+## 9. Provenance and pre-correction baseline
 
 The archived baseline was recorded at commit `4f81402` under Python 3.13.3.
 It included 265 passing tests plus 19 sandbox-only `tmp_path` errors; the
@@ -96,7 +227,7 @@ The archive preserves the earlier approximately 10.8% frequency, 12.8% position,
 headline values, along with the known pre-correction calibration and compact
 model limitations.
 
-## 6. What is complete and what is not
+## 10. What is complete and what is not
 
 Complete: grouped folds and leakage diagnostics; corrected n-gram inference;
 matched transcription protocols; direction diagnostics; compact-model repair;
@@ -107,7 +238,7 @@ grid. Until that grid is run, calibration-based claims must remain explicitly
 pilot/provisional. HMM convergence and orientation normalization also deserve
 follow-up before stronger model-family claims are made.
 
-## 7. Recommended next sequence
+## 11. Recommended next sequence
 
 1. Run the resumable calibration grid and record its exact command, environment,
    and completed-cell counts.
@@ -120,7 +251,7 @@ follow-up before stronger model-family claims are made.
    provisional, and all learned/compact model comparisons as bounded negative
    evidence.
 
-## 8. Reproduction commands
+## 12. Reproduction commands
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
