@@ -1,0 +1,105 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb}
+\usepackage{microtype}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue}
+\title{What Can Local Context Tell Us About the Indus Script?\\\large A Leakage-Controlled Computational Analysis}
+\author{Arth\=anve\d sa\d na project}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Whether the Indus script contains reproducible sequential structure can be studied without claiming a decipherment. We evaluate masked-sign restoration and held-out predictive log loss against frequency and positional baselines, using connected-component grouping to prevent duplicate and artifact leakage. Across 4,624 spans and 16,469 tokens, immediate context restores approximately 29.21\% of masked signs, compared with 10.82\% for frequency and 12.84\% for position. A grouped cross-fitted trigram improves the primary macro log-loss estimand by 0.02702 bits per token (descriptive 95\% interval [0.01048, 0.04395]), while the token-weighted interval includes zero. Strict matched-transcription analyses preserve the context advantage. Fully nested transformers, embeddings, and compact structural models do not outperform the bigram. Synthetic calibration supports a possible higher-order departure under a fitted first-order null, but the current calibration is pilot-scale. The evidence therefore supports a robust predictive-context claim, not a decipherment, linguistic identification, or unique generative interpretation.
+\end{abstract}
+
+\section{Introduction}
+The Indus script remains undeciphered, and computational regularities in its sign sequences are often difficult to interpret because inscriptions are short, duplicate records are common, readings differ, and related artifacts can cross random train--test partitions. This paper asks a deliberately narrower question: \emph{does local sign context predict a held-out sign beyond what sign frequency and position alone provide?}
+
+The distinction is important. Predictive structure is an empirical property of the corpus; it is not by itself a translation, a language identification, or evidence for a particular semantic system. We therefore prioritize leakage control, preregistered-style estimands, sensitivity analyses, and calibrated interpretation.
+
+\section{Data and reproducibility}
+The repository contains a pinned processed corpus, provenance records, validation utilities, analysis scripts, package code, and regression tests. The corpus is represented as sign sequences with inscription, artifact, duplicate, site, direction, completeness, and transcription metadata. Pre-correction outputs are preserved separately under \texttt{outputs/archive\_pre\_correction\_4f81402/} and are not mixed with corrected results.
+
+All analyses are reproducible from the scripts in \texttt{scripts/}. Generated reports and JSON summaries are written to experiment-specific directories under \texttt{outputs/}. The current implementation passes the complete test suite, Ruff linting, and mypy checks in the project environment.
+
+\section{Evaluation design}
+\subsection{Leakage control and grouped folds}
+Artifact, inscription, and exact-sequence duplicate relations are represented as a graph. Connected components are indivisible: every member is assigned to one fold, preventing equivalent sequences from appearing in both training and test data. Folds are assigned largest-component-first with seeded tie breaking, and load imbalance is reported rather than hidden. The main n-gram analysis uses five predefined fold seeds.
+
+\subsection{Restoration task}
+For each eligible masked position, models predict the original sign. We report top-1 accuracy, mean reciprocal rank where applicable, OOV rates, and frequency and position baselines. Unknown target signs count as restoration failures. Training vocabularies are constructed from the training partition only.
+
+\subsection{N-gram estimands}
+The primary n-gram estimand is the macro mean of group-level paired log-loss differences, answering whether a typical connected group benefits from a trigram. The secondary estimand is token-weighted. For token $i$, the paired difference is
+\[
+d_i = \log_2 P_{\mathrm{tri}}(w_i\mid w_{i-2},w_{i-1})-\log_2 P_{\mathrm{bi}}(w_i\mid w_{i-1}).
+\]
+All predictions are out-of-fold. Cluster bootstrap intervals resample connected groups. A group-level sign-flip statistic is retained as descriptive only; calibration, rather than that statistic, determines whether a decision rule has acceptable false-positive behavior.
+
+\subsection{Nested model comparisons}
+The transformer, PPMI/SVD, skip-gram, relative-position, complete-context, and HMM models use grouped inner partitions for configuration selection. Transformer stopping epochs are selected without access to outer test records. Compact models are evaluated under both a matched training cap and the full outer-training partition. HMM convergence and sequence caps are reported explicitly.
+
+\subsection{Sensitivity and calibration}
+We test preprocessing variants, reading-order orientation, direction transfer, and a strict matched pair table for two same-family transcriptions. Synthetic calibration separates (i) any predictive difference, (ii) positive improvement, and (iii) structural departure from a fitted first-order null. Calibration and evaluation draws are disjoint where the structural test requires them.
+
+\section{Results}
+\subsection{Primary restoration result}
+On the corrected grouped evaluation, immediate context achieves approximately 29.21\% top-1 restoration accuracy, versus 10.82\% for frequency and 12.84\% for position. The absolute advantages are approximately 18.4 and 16.4 percentage points, respectively.
+
+\subsection{Bigram versus trigram log loss}
+The analysis contains 4,624 spans, 16,469 tokens, and 2,262 connected components, with zero detected leakage. The primary macro effect is +0.02702 bits/token with a descriptive cluster-bootstrap 95\% interval of [+0.01048,+0.04395]. Across five fold seeds the mean is +0.02867 and the range is [+0.02592,+0.03147]. The token-weighted estimate is +0.03623 with interval [--0.01173,+0.09211], which includes zero.
+
+The largest component (\texttt{INDUS-0038}) contains 22.1\% of analyzed tokens and has an own effect of --0.09386. Excluding it changes the macro estimate to +0.02707 but the token-weighted estimate to +0.07321. The full-data macro estimate remains primary.
+
+\subsection{Learned representations and compact models}
+The fully nested transformer obtains 23.65\% $\pm$ 2.87 top-1 versus 29.21\% $\pm$ 1.87 for the bigram and loses on all ten outer splits. PPMI/SVD and skip-gram obtain approximately 8.30\% and 9.05\%, respectively.
+
+Held-out bits/token (lower is better) are shown in Table~\ref{tab:compact}.
+\begin{table}[h]
+\centering
+\caption{Compact model comparison.}
+\label{tab:compact}
+\begin{tabular}{lrrrrr}
+\toprule
+Budget & Bigram & Pos.-exact & Pos.-relative & Complete & HMM\\
+\midrule
+Matched cap & \textbf{7.0609} & 8.4865 & 8.8997 & 8.4246 & 8.1635\\
+Full outer train & \textbf{5.9663} & 7.5094 & 7.2874 & 7.5562 & 8.0941\\
+\bottomrule
+\end{tabular}
+\end{table}
+The bigram wins both budgets. HMM fits are partly non-converged, so this is a bounded model-specific negative result.
+
+\subsection{Transcription and orientation sensitivity}
+Under strict union-grouped matched transcription, primary and external context accuracy are 30.16\% and 30.18\%, with no sequence crossing folds. The earlier 39--40\% result came from artifact-only grouping with 56--74 cross-fold duplicate sequences and is rejected as leaky. As-stored versus normalized orientation gives approximately 31.93\% versus 30.76\% on identical partitions; direction and boundary analyses remain exploratory.
+
+\subsection{Synthetic calibration}
+The improvement rule has 0/30 false positives across five valid null cells in the current pilot. Power increases from 0.000 at $\lambda=0.35$ to 0.333 at $\lambda=0.50$ and 1.000 at stronger effects. The structural statistic for the real corpus is +0.0241 against a fitted-null mean of --0.0914, yielding a conditional $p\approx0.0244$; the independent evaluation false-positive estimate is 2/20 = 0.10. The calibration grid is therefore informative but not complete enough for a definitive significance claim.
+
+\section{Interpretation and significance}
+The strongest conclusion is that neighboring signs carry reproducible predictive information beyond independent frequency and positional effects. This conclusion survives strict grouped evaluation and matched transcription sensitivity. The simple bigram is a strong baseline, while tested flexible and compact alternatives do not automatically recover additional predictive performance.
+
+These results do not constitute a decipherment. No language, grammar, morpheme, meaning, or sign-to-meaning mapping is identified. The trigram result is consistent with higher-order structure but remains provisional because the token-weighted interval includes zero and the full synthetic calibration is unfinished. The negative model comparisons constrain the tested models and budgets; they do not show that all other structural or neural models must fail.
+
+\section{Limitations and next steps}
+The corpus is finite and curated, connected components are highly imbalanced, orientation conventions remain unsettled, and HMM optimization is partly non-converged. Confidence intervals quantify the stated resampling procedure rather than a universal population of inscriptions. The next priority is the resumable 100-replicate, three-size, multi-strength calibration grid, followed by a fixed orientation convention and a clean-environment regeneration of all outputs. Claims should continue to distinguish supported predictive context, provisional higher-order evidence, and exploratory diagnostics.
+
+\section{Reproducibility}
+The complete implementation is available in the project repository. Representative commands are:
+\begin{verbatim}
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m ruff check .
+.\.venv\Scripts\python.exe -m mypy
+.\.venv\Scripts\python.exe scripts/run_group_audit.py
+.\.venv\Scripts\python.exe scripts/run_ngram_inference.py
+.\.venv\Scripts\python.exe scripts/run_power_analysis.py
+\end{verbatim}
+Detailed implementation definitions are in \texttt{docs/METHODS.md}; the project-level evidence summary is in \texttt{docs/PROJECT\_REPORT.md}.
+
+\end{document}
