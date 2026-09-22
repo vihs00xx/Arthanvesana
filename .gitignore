@@ -15,3 +15,4 @@ data/interim/
 outputs/
 
 .env
+.pytest_tmp/
