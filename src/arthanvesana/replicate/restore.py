@@ -18,14 +18,51 @@ def _as_records(items: list) -> list[dict]:
     ]
 
 
+BOUNDARY_MODES = ("asymmetric", "none", "symmetric")
+
+
 def _mask_distributions(
     mats: dict, prior: dict, vocab: set, seq: list[str],
     start: int, stop: int, start_complete: bool,
+    boundary_mode: str = "asymmetric",
+    end_complete: bool = True,
 ) -> list[dict]:
+    """Distributions for the masked span ``[start, stop)``.
+
+    ``boundary_mode`` controls what evidence the sequence edges contribute:
+
+    * ``asymmetric`` (the pipeline default): a mask at the very beginning uses the
+      ``<S>`` start distribution when the span is complete, while a mask at the
+      very end gets a **uniform no-evidence** backward term. This is deliberately
+      NOT reversal-symmetric.
+    * ``none``: neither edge contributes boundary evidence; both use the same
+      prior term. This is reversal-symmetric *up to* the difference between the
+      training unigram and the chain's stationary distribution — exactly
+      invariant when those coincide, approximately otherwise.
+    * ``symmetric``: both edges use the ``<S>`` start distribution, **each gated
+      on its own completeness flag** (``start_complete`` at the beginning,
+      ``end_complete`` at the end). Because :func:`_reverse_records` swaps the two
+      flags, the two edges are treated identically under reversal.
+
+    **No mode is exactly reversal-invariant, including ``symmetric``.**
+    Equalizing the edge terms removes the *boundary* asymmetry, but the context
+    model is still not mirror-symmetric: its left term is ``P(w | prev)`` while
+    its right term is ``P(next | w)``. Those are transpose-related and coincide
+    only under detailed balance, which an MLE bigram over a finite corpus does not
+    satisfy in general. ``symmetric`` and ``none`` should therefore show a
+    *smaller* reversal delta than ``asymmetric``, not a zero one.
+
+    Requiring invariance of ``asymmetric`` would be a category error: that model
+    deliberately treats the start and the end differently.
+    """
+    if boundary_mode not in BOUNDARY_MODES:
+        raise ValueError(f"boundary_mode must be one of {BOUNDARY_MODES}")
     words = sorted(vocab)
     if start:
         prev = seq[start - 1] if seq[start - 1] in mats else "<UNK>"
         initial = mats[prev]
+    elif boundary_mode == "none":
+        initial = prior
     else:
         initial = mats["<S>"] if start_complete else prior
     nxt = seq[stop] if stop < len(seq) else None
@@ -42,7 +79,20 @@ def _mask_distributions(
             w: sum(forward[-1][v] * mats[v].get(w, 0.0) for v in words)
             for w in words
         }))
-    backward = [{w: mats[w].get(nxt, 0.0) if nxt is not None else 1.0 for w in words}]
+    if nxt is not None:
+        seed = {w: mats[w].get(nxt, 0.0) for w in words}
+    elif boundary_mode == "symmetric":
+        # mirror of the forward edge, gated on THIS edge's completeness flag
+        seed = ({w: mats["<S>"].get(w, 0.0) for w in words} if end_complete
+                else {w: prior.get(w, 0.0) for w in words})
+    elif boundary_mode == "none":
+        # the end gets the same no-evidence term the beginning gets (the prior),
+        # rather than a uniform term
+        seed = {w: prior.get(w, 0.0) for w in words}
+    else:
+        # asymmetric default: uniform no-evidence term at the end
+        seed = {w: 1.0 for w in words}
+    backward = [seed]
     for _ in range(stop - start - 1):
         backward.append(normalized({
             w: sum(mats[w].get(v, 0.0) * backward[-1][v] for v in words)
@@ -68,11 +118,14 @@ def restore_rank(
 
 def restoration_records(
     train: list, test: list, *, mask_length: int = 1, mask_stride: int = 1,
+    boundary_mode: str = "asymmetric",
 ) -> tuple[list[dict], int]:
     if not isinstance(mask_length, int) or mask_length < 1:
         raise ValueError("mask_length must be a positive integer")
     if not isinstance(mask_stride, int) or mask_stride < 1:
         raise ValueError("mask_stride must be a positive integer")
+    if boundary_mode not in BOUNDARY_MODES:
+        raise ValueError(f"boundary_mode must be one of {BOUNDARY_MODES}")
     train_records = _as_records(train)
     test_records = _as_records(test)
     sequences = [r["sequence"] for r in train_records]
@@ -97,6 +150,8 @@ def restoration_records(
             distributions = _mask_distributions(
                 mats, prior, model.vocab, seq, start, stop,
                 parse_bool(source.get("start_complete", True)),
+                boundary_mode,
+                parse_bool(source.get("end_complete", True)),
             )
             for pos, dist in zip(range(start, stop), distributions):
                 candidates = sorted(model.vocab - {"<UNK>"}, key=lambda w: (-dist[w], w))
@@ -121,6 +176,7 @@ def restoration_records(
                     "top_p": dist[candidates[0]] if candidates else 0.0,
                     "unknown_p": dist.get("<UNK>", 0.0),
                     "hit": rank == 1,
+                    "boundary_mode": boundary_mode,
                 })
     return records, 0
 
