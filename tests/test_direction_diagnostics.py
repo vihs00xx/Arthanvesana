@@ -135,10 +135,9 @@ def test_symmetric_end_seed_is_gated_on_end_complete():
 def test_edge_models_are_at_least_as_invariant_as_asymmetric():
     """No mode is exactly invariant; the edge-symmetric ones must be closer.
 
-    Exact reversal invariance is NOT achievable here: the context model's left
-    term is P(w | prev) and its right term is P(next | w), which are
-    transpose-related and coincide only under detailed balance. So the assertion
-    is comparative, not absolute.
+    Exact reversal invariance is NOT achievable here: the bigram has a start
+    symbol but no end symbol, and Witten-Bell smoothing depends on follower type
+    counts. So the assertion is comparative, not absolute.
     """
     train = _palindromic_records()
     test = _palindromic_records()
