@@ -119,7 +119,8 @@ def purity_permutation_null(
         "observed": observed,
         "null_mean": sum(nulls) / len(nulls),
         "null_95": nulls[min(int(0.95 * n_reps), n_reps - 1)],
-        "empirical_p": sum(v >= observed for v in nulls) / n_reps,
+        # plus-one corrected Monte Carlo p-value, so it is never zero
+        "empirical_p": (sum(v >= observed for v in nulls) + 1) / (n_reps + 1),
         "n_reps": n_reps,
     }
 
