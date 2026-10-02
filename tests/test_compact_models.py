@@ -339,6 +339,28 @@ def test_uniform_hmm_init_breaks_state_symmetry():
     assert not np.allclose(emissions[0], emissions[1])
 
 
+def test_uniform_hmm_init_escapes_the_unigram_saddle():
+    """Signs alternate between two classes, so two states halve the per-token
+    surprise of a unigram. A start too close to uniform used to "converge" at
+    the unigram after three iterations under every seed."""
+    import random
+
+    rnd = random.Random(0)
+    records = []
+    for i in range(30):
+        length = rnd.randint(4, 8)
+        seq = [rnd.choice(["a1", "a2"]) if t % 2 == 0 else rnd.choice(["b1", "b2"])
+               for t in range(length)]
+        records.append({"inscription_id": str(i), "sequence": seq})
+    unigram = DiscreteHMM(n_states=1, n_iter=5, seed=0).fit(records).loglik_history[-1]
+    n_tokens = sum(len(r["sequence"]) for r in records)
+    two_state_ideal = n_tokens * np.log(0.5)
+    for seed in range(5):
+        hmm = DiscreteHMM(n_states=2, n_iter=40, seed=seed, init="uniform").fit(records)
+        assert hmm.iterations_run > 3
+        assert hmm.loglik_history[-1] > (unigram + two_state_ideal) / 2
+
+
 def test_hmm_token_logprobs_are_predictive_and_sum_to_logprob():
     records = _records(30)
     hmm = DiscreteHMM(n_states=2, n_iter=5, seed=0).fit(records)

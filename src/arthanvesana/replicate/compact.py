@@ -276,10 +276,13 @@ class DiscreteHMM:
 
     def _init_log_b(self, rng, n, v, seqs):
         if self.init == "uniform":
-            # Near-uniform: an exactly uniform start is a fixed point of
-            # Baum-Welch (all states stay identical, i.e. a unigram model), so a
-            # small seeded perturbation breaks the symmetry.
-            return np.log(np.ones((n, v)) / v * (1.0 + 0.01 * rng.random((n, v))))
+            # Near-uniform (each entry within a factor of two of 1/v): an exactly
+            # uniform start is a fixed point of Baum-Welch (all states stay
+            # identical, i.e. a unigram model). A tiny perturbation leaves the
+            # fit so close to that saddle that the likelihood tolerance stops it
+            # there after a few iterations, so the seeded spread is deliberately
+            # large enough for EM to escape.
+            return np.log(np.ones((n, v)) / v * (1.0 + rng.random((n, v))))
         if self.init == "frequency_slice":
             # deterministic: assign each sign to a state by descending frequency
             counts = Counter(s for seq in seqs for s in seq)
