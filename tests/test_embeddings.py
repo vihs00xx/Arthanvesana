@@ -154,8 +154,10 @@ def test_cluster_purity_and_permutation_null():
     roles = {f"s{i}": "begin" if i < 4 else "end" for i in range(8)}
     purity = cluster_purity(sweep["labels"][2], roles)
     assert purity["purity"] == 1.0
-    null = purity_permutation_null(sweep["labels"][2], roles, n_reps=50, seed=0)
-    assert null["empirical_p"] <= 0.05
+    # exact null probability of purity 1 here is 2/70; the plus-one corrected
+    # estimate needs enough replicates to resolve it below 0.05
+    null = purity_permutation_null(sweep["labels"][2], roles, n_reps=400, seed=0)
+    assert 0.0 < null["empirical_p"] <= 0.05
     hier = hierarchical_labels(vectors, 2)
     assert sorted(Counter(hier).values()) == [4, 4]
     with pytest.raises(ValueError):
