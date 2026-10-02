@@ -372,3 +372,23 @@ def test_runner_manifest_declares_matching_and_policy(tmp_path):
     assert summary["structural"]["enabled"] is False
     report = (tmp_path / "out2" / "power_analysis_report.txt").read_text(encoding="utf-8")
     assert "STRUCTURAL TEST: not run" in report
+
+def test_crossfit_effect_keeps_artifact_links_of_real_records():
+    """Spans of one artifact must stay together when real records are passed."""
+    import random
+    rng = random.Random(0)
+    signs = [f"{100 + i:03d}" for i in range(12)]
+    records = []
+    for k in range(60):
+        art = f"a{k // 2}"  # two spans per artifact
+        records.append({
+            "inscription_id": f"i{k}", "artifact_id": art,
+            "artifact_group": (None, "explicit", art), "site": "S",
+            "sequence": [rng.choice(signs) for _ in range(4)],
+            "span_index": 0, "span_start": 0,
+            "start_complete": True, "end_complete": True,
+        })
+    by_records = crossfit_effect(records, 3, 0, 50, 50)
+    by_seqs = crossfit_effect([r["sequence"] for r in records], 3, 0, 50, 50)
+    assert by_records["n_groups"] <= 30
+    assert by_seqs["n_groups"] > 30

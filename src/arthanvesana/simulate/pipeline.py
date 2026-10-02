@@ -64,8 +64,15 @@ def crossfit_effect(seqs, n_folds=5, seed=0, permutations=2000, bootstrap=2000,
     Group means are the independent units; duplicating tokens inside one group
     changes group size but not the number of groups. All Monte Carlo p-values
     use the plus-one correction, so none can equal zero.
+
+    ``seqs`` may be plain sequences (synthetic corpora: one artifact each) or
+    full analysis records. Real-corpus records must be passed as records so
+    their artifact and inscription links are kept: wrapping them as plain
+    sequences would let spans of one inscription or artifact fall in different
+    folds.
     """
-    records = records_from_seqs(seqs)
+    records = (list(seqs) if seqs and isinstance(seqs[0], dict)
+               else records_from_seqs(seqs))
     groups = connected_groups(records, track="artifact", group_duplicates=True)
     assignment = assign_folds(
         {g["group_id"]: (
