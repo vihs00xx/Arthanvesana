@@ -78,3 +78,15 @@ def test_oov_targets_excluded_from_loss_and_counted():
     assert bundle["n_valid_masked"] > 0
     assert bundle["n_valid_oov"] > 0
     assert 0.0 < bundle["valid_oov_rate"] < 1.0
+
+def test_best_epoch_excludes_patience_epochs():
+    """Refitting for epochs_run would add the patience epochs after the best one."""
+    train = [["a", "b"]] * 10 + [["c", "d"]] * 10
+    valid = [["a", "c"], ["d", "b"]]
+    bundle = train_masked_lm(train, valid, dim=8, heads=2, max_epochs=30,
+                             patience=3, seed=0)
+    assert 1 <= bundle["best_epoch"] <= bundle["epochs_run"]
+    if bundle["epochs_run"] < 30:  # early stopping fired
+        assert bundle["best_epoch"] == bundle["epochs_run"] - 3
+    no_valid = train_masked_lm(train, None, dim=8, heads=2, max_epochs=4, seed=0)
+    assert no_valid["best_epoch"] == no_valid["epochs_run"] == 4

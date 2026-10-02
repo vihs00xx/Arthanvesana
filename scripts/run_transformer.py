@@ -98,12 +98,15 @@ def _inner_select(train, seed, max_epochs, patience):
             "config": config,
             "valid_top_1": _metrics(ranks)["top_1"],
             "epochs_run": bundle["epochs_run"],
+            "best_epoch": bundle["best_epoch"],
             "n_parameters": bundle["n_parameters"],
             "fit_vocab_size": bundle["fit_vocab_size"],
             "valid_oov_rate": bundle["valid_oov_rate"],
         })
     best = max(inner, key=lambda row: (row["valid_top_1"], -row["n_parameters"]))
-    return inner, best["config"], best["epochs_run"], len(fit_records), len(valid_records)
+    # refit for the epoch whose weights were kept, not for epochs_run, which
+    # includes the `patience` epochs trained after the best one
+    return inner, best["config"], best["best_epoch"], len(fit_records), len(valid_records)
 
 
 def _refit_and_test(train, test, config, epochs, seed):
