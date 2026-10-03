@@ -69,6 +69,8 @@ SCENARIOS = ("unigram", "position_only", "markov", "hmm_slots", "shuffled_real")
 TRI_LAMBDAS = (0.0, 0.25, 0.30, 0.35, 0.40, 0.5, 1.0)
 #: The fitted first-order null used for the structural test.
 NULL_SCENARIO = "markov"
+#: Grouping of the real-corpus observed effect; part of its cache key.
+OBSERVED_GROUPING = "artifact_records"
 
 SCENARIO_INFO = {
     "unigram": {
@@ -474,14 +476,19 @@ def main(argv=None):
     # every cell and is the statistic the structural test asks about.
     observed_path = args.output / "observed_effect.json"
     observed = _read_json(observed_path) if resume else None
-    if observed is None or observed.get("status") != "ok":
+    # a cache written before the real corpus was grouped by artifact records is
+    # stale (it grouped plain sequences only), so it is recomputed
+    if (observed is None or observed.get("status") != "ok"
+            or observed.get("grouping") != OBSERVED_GROUPING):
         if verbose:
             print("computing observed effect on the real corpus ...", flush=True)
-        seqs = [r["sequence"] for r in REAL_RECORDS if r["sequence"]]
-        obs = crossfit_effect(seqs, 5, args.seed, args.permutations,
+        # full records, so artifact/inscription links group the real corpus
+        # exactly as run_ngram_inference.py does
+        real = [r for r in REAL_RECORDS if r["sequence"]]
+        obs = crossfit_effect(real, 5, args.seed, args.permutations,
                               args.bootstrap)
         observed = {"status": "ok" if obs.get("macro_effect") is not None
-                    else "skipped", **obs}
+                    else "skipped", "grouping": OBSERVED_GROUPING, **obs}
         _write_json(observed_path, observed)
     observed_effect = observed.get("macro_effect")
 

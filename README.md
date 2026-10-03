@@ -91,7 +91,7 @@ Run `python scripts/run_direction_diagnostics.py --repeats 10` to investigate th
 
 All orientation variants are split with the **same union-derived group keys**, so neither ordering can leak an equivalent sequence across the shared split. The runner reports:
 
-- **Three boundary models** under reversal: `asymmetric` (the default, mean delta −0.0134), `none` (+0.0094) and `symmetric` (−0.0046). **No model is exactly reversal-invariant**, including `symmetric`: the context model's left term is `P(w | prev)` and its right term is `P(next | w)`, which are transpose-related and coincide only under detailed balance. The edge-symmetric models do show a smaller delta than the default.
+- **Three boundary models** under reversal: `asymmetric` (the default, mean delta −0.0134), `none` (+0.0094) and `symmetric` (−0.0046). **No model is exactly reversal-invariant**, including `symmetric`: the fitted bigram has a `<S>` start symbol but no end symbol, so `P(next | w)` is normalized over non-final occurrences of `w` while the reversed model uses non-initial ones (Witten-Bell smoothing adds a smaller asymmetry). Detailed balance is not required: with an explicit end symbol and MLE counts the interior scores are exactly reversal-invariant. The edge-symmetric models do show a smaller delta than the default.
 - **Cross-direction transfer with OOV separated.** Comparing conditions at *matched* OOV (both 0.1815) shows 0.0697 vs 0.2808 on shared-vocabulary targets, so the ordering effect is real rather than a vocabulary-coverage artefact.
 - **Position classes** reported separately: singleton 0.0536, first 0.1604, interior 0.3476, last 0.3485.
 

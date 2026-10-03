@@ -45,12 +45,17 @@ def _mask_distributions(
       flags, the two edges are treated identically under reversal.
 
     **No mode is exactly reversal-invariant, including ``symmetric``.**
-    Equalizing the edge terms removes the *boundary* asymmetry, but the context
-    model is still not mirror-symmetric: its left term is ``P(w | prev)`` while
-    its right term is ``P(next | w)``. Those are transpose-related and coincide
-    only under detailed balance, which an MLE bigram over a finite corpus does not
-    satisfy in general. ``symmetric`` and ``none`` should therefore show a
-    *smaller* reversal delta than ``asymmetric``, not a zero one.
+    Equalizing the edge terms removes the *boundary* asymmetry at the masked
+    position, but the fitted bigram itself is not reversal-symmetric. It has a
+    ``<S>`` start symbol and no end symbol, so the right term ``P(next | w)`` is
+    normalized over the non-final occurrences of ``w``, while the model fitted to
+    reversed data normalizes over its non-initial occurrences; Witten-Bell
+    smoothing also depends on follower rather than predecessor type counts.
+    Detailed balance is not required: with an explicit end symbol and MLE
+    counts, interior scores ``P(w | prev) P(next | w)`` are exactly invariant
+    under reversal, because the candidate-independent factor cancels on
+    normalization. ``symmetric`` and ``none`` should therefore show a *smaller*
+    reversal delta than ``asymmetric``, not a zero one.
 
     Requiring invariance of ``asymmetric`` would be a category error: that model
     deliberately treats the start and the end differently.

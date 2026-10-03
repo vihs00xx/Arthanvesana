@@ -153,6 +153,7 @@ def train_masked_lm(
     best_valid = float("inf")
     stale = 0
     epochs_run = 0
+    best_epoch = 0
     valid_oov = 0
     valid_masked = 0
     for _ in range(max_epochs):
@@ -189,6 +190,7 @@ def train_masked_lm(
         if valid_loss < best_valid - 1e-4:
             best_valid = valid_loss
             best_state = [p.detach().clone() for p in model.parameters()]
+            best_epoch = epochs_run
             stale = 0
         else:
             stale += 1
@@ -202,6 +204,8 @@ def train_masked_lm(
         "model": model, "table": table, "dim": dim, "layers": layers,
         "heads": heads, "dropout": dropout, "lr": lr,
         "epochs_run": epochs_run, "best_valid_loss": best_valid,
+        # epoch whose weights are returned; equals epochs_run without validation
+        "best_epoch": best_epoch if best_state is not None else epochs_run,
         "n_parameters": count_parameters(model),
         "fit_vocab_size": len(table) - len(SPECIAL_TOKENS),
         "n_valid_masked": valid_masked,

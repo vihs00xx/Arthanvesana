@@ -31,7 +31,7 @@ for a result.
 | Matched-transcription comparison repaired (pair table, shared strict partitions, subgroup metrics) | implemented, **run, tested** | §5, `outputs/transcription_sensitivity/` |
 | Direction diagnostics refined (union groups, OOV-controlled transfer, three boundary models, position classes) | implemented, **run, tested** | §5, `outputs/direction_diagnostics/` |
 | Full 100-replicate, 3-size, multi-strength calibration grid | **pending** (runtime: ~100 h serial) | §4b, resume command in `docs/PROJECT_REPORT.md` |
-| Reversal invariance of the bigram context model | **not achievable** as documented | §5 — left/right terms are transpose-related |
+| Reversal invariance of the bigram context model | **not achievable** as documented | §5 — the bigram has a start symbol but no end symbol |
 
 **Run scale actually achieved.** The calibration grid completed **112 replicates** (6 per
 cell) at 1× size only, not the ≥100 per cell across 0.5×/1×/2× that the brief specifies.
@@ -257,11 +257,14 @@ resolve a λ ≈ 0.43 effect, and it is conditional on an imperfectly reproducin
   - Reversal is reported under **three boundary models**: `asymmetric` (default,
     mean delta −0.0134), `none` (+0.0094), `symmetric` (−0.0046). **No model is
     exactly reversal-invariant**, including `symmetric`. Equalizing the edge terms
-    removes the *boundary* asymmetry, but the context model's left term is
-    `P(w | prev)` while its right term is `P(next | w)`; these are transpose-related
-    and coincide only under detailed balance. The edge-symmetric models do show a
-    smaller delta than the default. Interior masks remain exactly mirror-symmetric
-    (unit-tested).
+    removes the *boundary* asymmetry, but the fitted bigram has a `<S>` start
+    symbol and no end symbol, so `P(next | w)` is normalized over the non-final
+    occurrences of `w` while the reversed model uses its non-initial occurrences
+    (Witten-Bell smoothing adds a smaller asymmetry). Detailed balance is not the
+    cause: with an explicit end symbol and MLE counts the interior scores are
+    exactly reversal-invariant. The edge-symmetric models do show a smaller delta
+    than the default. The interior unit test passes because its toy corpus is
+    palindromic; on the real corpus interior masks are not exactly symmetric.
   - **Cross-direction transfer is reported with OOV separated.** At *matched* OOV
     (both 0.1815), `normalized_LR_to_RL` scores 0.0697 on shared-vocabulary targets
     against `stored_LR_to_RL` at 0.2808. The earlier claim that vocabulary coverage

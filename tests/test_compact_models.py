@@ -309,3 +309,73 @@ def test_compact_runner_reports_both_budgets(tmp_path):
     assert "training-only vocabulary" in report
     assert "confidence intervals" in report
     assert summary["manifest"]["grouping_policy"].startswith("artifact_grouped")
+
+def test_cap_skips_oversize_component_and_samples_at_random():
+    """A component larger than the cap must not become the whole capped subset.
+
+    The real corpus has one duplicate-linked component holding about a third of
+    all records; a largest-first cap selected it, and only it, in every fold.
+    """
+    records = []
+    for i in range(40):  # one giant component: all share an artifact
+        records.append({"inscription_id": f"g{i}", "artifact_id": "BIG",
+                        "artifact_group": (None, "explicit", "BIG"),
+                        "sequence": ["001", f"{300 + i:03d}"], "site": "S"})
+    records.extend(_records(30))
+    groups = connected_groups(records, track="artifact", group_duplicates=True)
+    capped, info = cap_records_by_group(records, groups, 10, seed=0)
+    ids = {r["inscription_id"] for r in capped}
+    assert not any(i.startswith("g") for i in ids)
+    assert info["n_oversize_groups_skipped"] == 1
+    assert 10 <= info["n_records"] <= 11
+    other, _ = cap_records_by_group(records, groups, 10, seed=1)
+    assert {r["inscription_id"] for r in other} != ids, "order must depend on the seed"
+
+
+def test_uniform_hmm_init_breaks_state_symmetry():
+    """An exactly uniform start is a Baum-Welch fixed point (a unigram model)."""
+    hmm = DiscreteHMM(n_states=3, n_iter=5, seed=0, init="uniform").fit(_records(30))
+    emissions = np.exp(hmm.log_b)
+    assert not np.allclose(emissions[0], emissions[1])
+
+
+def test_uniform_hmm_init_escapes_the_unigram_saddle():
+    """Signs alternate between two classes, so two states halve the per-token
+    surprise of a unigram. A start too close to uniform used to "converge" at
+    the unigram after three iterations under every seed."""
+    import random
+
+    rnd = random.Random(0)
+    records = []
+    for i in range(30):
+        length = rnd.randint(4, 8)
+        seq = [rnd.choice(["a1", "a2"]) if t % 2 == 0 else rnd.choice(["b1", "b2"])
+               for t in range(length)]
+        records.append({"inscription_id": str(i), "sequence": seq})
+    unigram = DiscreteHMM(n_states=1, n_iter=5, seed=0).fit(records).loglik_history[-1]
+    n_tokens = sum(len(r["sequence"]) for r in records)
+    two_state_ideal = n_tokens * np.log(0.5)
+    for seed in range(5):
+        hmm = DiscreteHMM(n_states=2, n_iter=40, seed=seed, init="uniform").fit(records)
+        assert hmm.iterations_run > 3
+        assert hmm.loglik_history[-1] > (unigram + two_state_ideal) / 2
+
+
+def test_hmm_token_logprobs_are_predictive_and_sum_to_logprob():
+    records = _records(30)
+    hmm = DiscreteHMM(n_states=2, n_iter=5, seed=0).fit(records)
+    record = records[3]
+    assert sum(hmm.token_logprobs(record)) == pytest.approx(hmm.logprob(record))
+
+
+def test_hmm_restoration_does_not_see_the_target_sign():
+    from arthanvesana.replicate.compact import _hmm_marginal
+
+    records = _records(30)
+    hmm = DiscreteHMM(n_states=3, n_iter=5, seed=0).fit(records)
+    record = dict(records[0])
+    changed = dict(record, sequence=[record["sequence"][0], "003",
+                                     record["sequence"][2]])
+    a = _hmm_marginal(hmm, record, 1)
+    b = _hmm_marginal(hmm, changed, 1)
+    assert a == pytest.approx(b)

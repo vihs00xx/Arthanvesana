@@ -276,7 +276,13 @@ class DiscreteHMM:
 
     def _init_log_b(self, rng, n, v, seqs):
         if self.init == "uniform":
-            return np.log(np.ones((n, v)) / v)
+            # Near-uniform (each entry within a factor of two of 1/v): an exactly
+            # uniform start is a fixed point of Baum-Welch (all states stay
+            # identical, i.e. a unigram model). A tiny perturbation leaves the
+            # fit so close to that saddle that the likelihood tolerance stops it
+            # there after a few iterations, so the seeded spread is deliberately
+            # large enough for EM to escape.
+            return np.log(np.ones((n, v)) / v * (1.0 + rng.random((n, v))))
         if self.init == "frequency_slice":
             # deterministic: assign each sign to a state by descending frequency
             counts = Counter(s for seq in seqs for s in seq)
@@ -363,20 +369,22 @@ class DiscreteHMM:
         return beta
 
     def token_logprobs(self, record):
-        """Per-token log2 likelihoods under the posterior; never None."""
+        """Per-token predictive log2 likelihoods ``log2 p(x_t | x_<t)``; never None.
+
+        Chain-rule terms from the forward pass, so they sum to :meth:`logprob`.
+        A state posterior that also conditions on ``x_t`` (or on later tokens)
+        would score each token with knowledge of itself.
+        """
         seq = record["sequence"]
         if not seq:
             return []
         row = np.array([self.index.get(s, self.index[UNK]) for s in seq], dtype=int)
         alpha = self._forward(self.log_pi, self.log_a, self.log_b, row)
-        beta = self._backward(self.log_a, self.log_b, row)
-        gamma = alpha + beta
-        gamma -= _logsumexp(gamma, axis=0)[None, :]
-        out = []
-        for t in range(row.size):
-            logp = _logsumexp(gamma[:, t] + self.log_b[:, row[t]]) / math.log(2)
-            out.append(float(logp))
-        return out
+        totals = [_logsumexp(alpha[:, t]) for t in range(row.size)]
+        out = [totals[0] / math.log(2)]
+        for t in range(1, row.size):
+            out.append(float((totals[t] - totals[t - 1]) / math.log(2)))
+        return [float(v) for v in out]
 
     def logprob(self, record):
         """Total log2 likelihood; never None, even with unseen signs."""
@@ -416,28 +424,39 @@ class DiscreteHMM:
 def cap_records_by_group(records, groups, cap_records, seed):
     """Cap a training partition using WHOLE components only.
 
-    Components are added largest-first with seeded tie-breaking until the record
-    cap is reached, so the cap never splits a component and the realized size is
-    reported by the caller. Returns ``(capped_records, realized)``.
+    Components are visited in a seeded random order and added until the record
+    cap is reached, so the cap never splits a component and the capped subset is
+    a random sample of components rather than a fixed block. A component that is
+    larger than the cap on its own is skipped (and counted), because adding it
+    would turn the "capped" subset into that single component: the corpus's
+    largest duplicate-linked component holds about a third of all records, so a
+    largest-first order would select it, and only it, in every fold that
+    contains it. The realized size is reported by the caller.
+    Returns ``(capped_records, realized)``.
     """
     if cap_records is None or len(records) <= cap_records:
         return list(records), {
             "cap": cap_records, "n_records": len(records),
             "capped": False, "n_groups": len(groups),
+            "n_oversize_groups_skipped": 0,
         }
-    rng = random.Random(seed)
-    tie = {g["group_id"]: rng.random() for g in groups}
-    order = sorted(groups, key=lambda g: (-len(g["indices"]), tie[g["group_id"]]))
+    order = sorted(groups, key=lambda g: g["group_id"])
+    random.Random(seed).shuffle(order)
     chosen = []
+    n_oversize = 0
     for group in order:
         if len(chosen) >= cap_records:
             break
+        if len(group["indices"]) > cap_records:
+            n_oversize += 1
+            continue
         chosen.extend(group["indices"])
-    selected = {i for i in chosen}
+    selected = set(chosen)
     capped = [r for i, r in enumerate(records) if i in selected]
     return capped, {
         "cap": cap_records, "n_records": len(capped), "capped": True,
         "n_groups": sum(1 for g in groups if set(g["indices"]) <= selected),
+        "n_oversize_groups_skipped": n_oversize,
     }
 
 
@@ -507,12 +526,21 @@ def restoration_top1(model, vocab, records):
 
 
 def _hmm_marginal(model, record, pos):
-    """Posterior over emissions at one position."""
+    """Posterior over the emission at ``pos`` given every OTHER position.
+
+    The forward message at ``pos`` includes the emission of the true sign, so it
+    is replaced by the predictive message (transition from ``pos - 1`` only);
+    otherwise the restoration would condition on the sign it is restoring.
+    """
     seq = record["sequence"]
     row = np.array([model.index.get(s, model.index[UNK]) for s in seq], dtype=int)
     alpha = model._forward(model.log_pi, model.log_a, model.log_b, row)
     beta = model._backward(model.log_a, model.log_b, row)
-    gamma = alpha[:, pos] + beta[:, pos]
+    if pos == 0:
+        prior = model.log_pi
+    else:
+        prior = _logsumexp(alpha[:, pos - 1][:, None] + model.log_a, axis=0)
+    gamma = prior + beta[:, pos]
     gamma = gamma - _logsumexp(gamma)
     post = np.exp(gamma)
     out = {}

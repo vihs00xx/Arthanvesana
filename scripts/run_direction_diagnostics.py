@@ -58,11 +58,11 @@ MIN_STRATUM_TEST = 40
 #: Which reversal invariants are mathematically expected, per boundary model.
 REVERSAL_EXPECTATIONS = {
     "asymmetric": (
-        "NOT expected to be invariant. The interior is exactly mirror-symmetric "
-        "(the forward chain uses P(next|cur) and the reversed chain the same "
-        "matrix), but a mask at the very start uses the <S> start distribution "
-        "while a mask at the very end gets a uniform no-evidence backward term. "
-        "Reversing therefore moves the <S> effect to the other edge."
+        "NOT expected to be invariant. A mask at the very start uses the <S> "
+        "start distribution while a mask at the very end gets a uniform "
+        "no-evidence backward term, so reversing moves the <S> effect to the "
+        "other edge. Interior masks are not exactly mirror-symmetric either "
+        "(see 'symmetric')."
     ),
     "none": (
         "Expected to be APPROXIMATELY invariant, not exactly. Both edges use the "
@@ -74,11 +74,13 @@ REVERSAL_EXPECTATIONS = {
     "symmetric": (
         "Removes the BOUNDARY asymmetry, but is NOT exactly invariant. Both edges "
         "use the <S> start distribution, each gated on its own completeness flag, "
-        "so the two edges are treated identically under reversal. The context "
-        "model itself is still not mirror-symmetric, however: its left term is "
-        "P(w | prev) and its right term is P(next | w), which are "
-        "transpose-related and coincide only under detailed balance. Expect a "
-        "delta SMALLER than 'asymmetric', not zero."
+        "so the two edges are treated identically under reversal. The fitted "
+        "bigram is still not reversal-symmetric: it has a <S> start symbol but no "
+        "end symbol, so P(next | w) is normalized over the non-final occurrences "
+        "of w while the reversed model uses its non-initial occurrences, and "
+        "Witten-Bell smoothing depends on follower type counts. Detailed balance "
+        "is not needed: with an end symbol and MLE counts the interior scores "
+        "are exactly invariant. Expect a delta SMALLER than 'asymmetric', not zero."
     ),
 }
 
@@ -465,8 +467,8 @@ def render_report(summary):
         "B. Reversal check under each boundary model (original minus reversed):",
         "   No model here is exactly invariant. 'symmetric' and 'none' equalize the",
         "   edge treatment and should show a SMALLER delta than the 'asymmetric'",
-        "   default; the residual is the bigram's left/right transpose asymmetry",
-        "   (P(w|prev) vs P(next|w)), which vanishes only under detailed balance.",
+        "   default; the residual comes from the bigram having a start symbol but",
+        "   no end symbol (and from Witten-Bell smoothing), not from detailed balance.",
     ])
     for mode, block in summary["B_reversal"].items():
         if block["n_runs"]:
