@@ -225,6 +225,15 @@ def test_mkn_zero_discount_falls_back_to_absolute_discount():
     assert model.dist(()) == pytest.approx({"a": 7 / 16, "b": 7 / 16, "<UNK>": 1 / 8})
 
 
+
+def test_mkn_nonpositive_estimated_discount_falls_back_and_keeps_unseen_mass():
+    counts = Counter({("a",): 1, ("b",): 2, ("c",): 3, ("d",): 4, ("e",): 4, ("f",): 4})
+    d1, d2, d3 = _mkn_discounts(counts)
+    assert d3 == pytest.approx(1 / 3) and d1 > 0 and d2 > 0
+    seqs = [["x", "y"]] * 4 + [["y", "x"], ["z"]]
+    model = NGramModel(seqs, 2, method="mkn")
+    assert all(p > 0 for p in model.dist(("x",)).values())
+
 @pytest.mark.parametrize("order", [1, 2, 3, 4, 5])
 @pytest.mark.parametrize("seqs", [[], [[]], [["a"]] * 2, [["a", "b"]] * 2])
 def test_mkn_sparse_distributions_are_positive_and_normalized(order, seqs):

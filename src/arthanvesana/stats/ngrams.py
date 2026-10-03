@@ -30,10 +30,12 @@ def _mkn_discounts(counts: Counter) -> tuple:
         d = n1 / (n1 + 2 * n2) if n1 else 0.75
         return (d, d, d)
     y = n1 / (n1 + 2 * n2)
-    d1 = max(1 - 2 * y * n2 / n1, 0.0)
-    d2 = max(2 - 3 * y * n3 / n2, 0.0)
-    d3 = max(3 - 4 * y * n4 / n3, 0.0)
-    return (d1, d2, d3)
+    d1 = 1 - 2 * y * n2 / n1
+    d2 = 2 - 3 * y * n3 / n2
+    d3 = 3 - 4 * y * n4 / n3
+    # A non-positive estimate would leave a context with no back-off mass,
+    # giving unseen followers probability zero; use Ney's single discount y.
+    return tuple(d if d > 0 else y for d in (d1, d2, d3))
 
 
 class NGramModel:
